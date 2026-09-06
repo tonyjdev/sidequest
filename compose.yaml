@@ -1,0 +1,74 @@
+# Entorno local completo: la aplicación y su base de datos. El nombre del
+# proyecto se fija aquí para que un worktree no levante un proyecto distinto
+# —y un volumen vacío— solo por estar en otro directorio.
+name: sidequest
+
+services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      # El propio arranque de la imagen crea la base y el usuario con estas
+      # variables: no hay ningún paso manual después del primer `up`.
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?falta MYSQL_DATABASE en .env}
+      MYSQL_USER: ${MYSQL_USER:?falta MYSQL_USER en .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?falta MYSQL_PASSWORD en .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?falta MYSQL_ROOT_PASSWORD en .env}
+    ports:
+      # Publicado para las migraciones y la inspección desde la máquina
+      # anfitriona. Dentro de la red, la aplicación usa siempre el puerto 3306.
+      - '${MYSQL_HOST_PORT:-3306}:3306'
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      # La contraseña se lee del entorno del contenedor, no se interpola aquí:
+      # `$$` deja el `$` para la shell del contenedor.
+      test: ['CMD-SHELL', 'mysqladmin ping -h 127.0.0.1 -u root -p"$$MYSQL_ROOT_PASSWORD" --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      # La primera inicialización crea el esquema del sistema y tarda; hasta que
+      # termina, un fallo de la sonda no cuenta.
+      start_period: 60s
+
+  app:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        # Arranque ordenado: la aplicación no empieza hasta que MySQL responde.
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-production}
+      APP_HOST: 0.0.0.0
+      APP_PORT: ${APP_PORT:-3000}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:3000}
+      WEB_PUBLIC_URL: ${WEB_PUBLIC_URL:-http://localhost:5173}
+      # Por nombre de servicio, nunca por IP: Docker lo resuelve en la red del
+      # proyecto y la dirección cambia en cada arranque.
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PORT: ${MYSQL_PORT:-3306}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:?falta MYSQL_DATABASE en .env}
+      MYSQL_USER: ${MYSQL_USER:?falta MYSQL_USER en .env}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?falta MYSQL_PASSWORD en .env}
+      DATABASE_URL: ${DATABASE_URL:?falta DATABASE_URL en .env}
+      SIDEQUEST_ATTEMPT_SECRET: ${SIDEQUEST_ATTEMPT_SECRET:?falta SIDEQUEST_ATTEMPT_SECRET en .env}
+    ports:
+      - '${APP_HOST_PORT:-3000}:${APP_PORT:-3000}'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:' + process.env.APP_PORT + '/health').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+volumes:
+  # Volumen con nombre: `docker compose down` conserva los datos y solo
+  # `docker compose down -v` los borra.
+  mysql-data:

@@ -8,8 +8,8 @@ concretos y el contexto de arquitectura.
 
 ## Comandos
 
-> El espacio de trabajo, TypeScript y la puerta de calidad existen desde SQST-0002. Docker Compose
-> y la base de datos llegan después; el segundo bloque marca qué comando trae cada tarea.
+> El espacio de trabajo y la puerta de calidad existen desde SQST-0002; el entorno en Docker, desde
+> SQST-0003. El segundo bloque marca qué comando trae cada tarea pendiente.
 
 ```bash
 pnpm install                  # instala el espacio de trabajo (app + web)
@@ -23,14 +23,18 @@ pnpm test -- selection        # un solo archivo de pruebas
 pnpm build
 
 bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
+
+cp .env.example .env          # obligatorio antes del primer `up`
+docker compose up -d --build  # levanta app + MySQL
+docker compose ps             # ambos servicios deben figurar como (healthy)
+docker compose logs -f app
+docker compose down           # para; conserva el volumen de datos
+docker compose down -v        # borra también el volumen de datos
 ```
 
 Todavía no existen; los trae la tarea indicada:
 
 ```bash
-docker compose up -d          # levanta app + MySQL                     SQST-0003
-docker compose logs -f app
-docker compose down -v        # borra también el volumen de datos
 pnpm db:generate              # genera migraciones Drizzle del esquema  SQST-0005
 pnpm db:migrate               # aplica migraciones
 pnpm db:studio                # inspección del esquema
@@ -48,10 +52,12 @@ scripts/git/task-worktree.sh finish SQST-0005 # integración posterior a la fusi
 ```
 
 Ese script es la única implementación de las transiciones de Git del ciclo. Ver
-`docs/development/worktrees.md`. **Docker Compose es de uno en uno**: cada worktree levantaría su
-propio proyecto, con su propio volumen y los mismos puertos.
+`docs/development/worktrees.md`. **Docker Compose es de uno en uno**: el proyecto se llama
+`sidequest` en todos los worktrees, así que comparten volumen y puertos publicados.
 
-El gestor de paquetes es `pnpm`. La base de datos es MySQL en Docker, con volumen persistente.
+El gestor de paquetes es `pnpm`. La base de datos es MySQL 8.4 en Docker, con volumen persistente.
+Los puertos, las variables y el ciclo de vida del volumen están en
+`docs/development/docker.md`.
 
 ## Arquitectura
 

@@ -106,14 +106,15 @@ trabajo sin confirmar, una rama con commits propios y una rama publicada en `ori
 
 ## Docker Compose es de uno en uno
 
-Compose toma el nombre del proyecto del directorio, así que `.worktrees/sqst-0005` levantaría un
-proyecto `sqst-0005` con **su propio volumen de MySQL**: base vacía, no la que tienes preparada. Y
-todos los worktrees publican los mismos puertos, así que el segundo `docker compose up` falla al
-enlazarlos.
+`compose.yaml` fija el nombre del proyecto (`name: sidequest`), así que todos los worktrees
+levantan el mismo proyecto y comparten volumen de MySQL: trabajar en otro worktree no te deja
+delante de una base vacía sin avisar. Pero también publican los mismos puertos, así que el segundo
+`docker compose up` falla al enlazarlos.
 
 Levanta Compose en un worktree cada vez. Si necesitas dos a la vez, dale a cada uno su
-`COMPOSE_PROJECT_NAME` y sus puertos publicados en el `.env` del worktree —que es una copia, no un
-enlace, así que puedes cambiarlo sin afectar al primario.
+`COMPOSE_PROJECT_NAME` y sus `APP_HOST_PORT` y `MYSQL_HOST_PORT` en el `.env` del worktree —que es
+una copia, no un enlace, así que puedes cambiarlo sin afectar al primario. Ver
+[docker.md](docker.md).
 
 ## Lo que esto no resuelve
 

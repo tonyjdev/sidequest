@@ -1,0 +1,24 @@
+# El contexto solo necesita los manifiestos, la configuración de TypeScript y
+# app/. Todo lo demás alarga la construcción sin entrar en la imagen.
+.git
+.github
+.claude
+.worktrees
+node_modules
+**/node_modules
+**/dist
+**/coverage
+docs
+scripts
+tests
+web/src
+web/index.html
+web/vite.config.ts
+web/tsconfig.json
+.env
+.env.*
+!.env.example
+*.log
+Dockerfile
+.dockerignore
+compose.yaml
