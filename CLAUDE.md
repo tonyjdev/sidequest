@@ -66,8 +66,12 @@ puertas a las mismas reglas: si una regla acaba duplicada en ambas, está en el 
 mostraron y de la versión de la pregunta. Nunca reconstruyas un intento histórico leyendo la
 pregunta actual: si la pregunta se editó, la lectura sería falsa.
 
-**Nada se borra.** Temas, subtemas y preguntas se archivan. Las estadísticas dependen de que el
-histórico siga completo.
+**La jerarquía de contenido tiene tres niveles fijos**: `subjects` → `topics` → `subtopics`
+(materia → tema → subtema). La pregunta cuelga siempre de un subtema; el tema y la materia se
+derivan. No es un árbol de profundidad libre.
+
+**Nada se borra.** Materias, temas, subtemas y preguntas se archivan. Las estadísticas dependen de
+que el histórico siga completo.
 
 **La importación es un flujo de dos fases**: `preview` valida y clasifica en válidos, inválidos y
 duplicados sin escribir; `commit` persiste solo lo aceptado. No añadas un camino que escriba en
