@@ -74,6 +74,27 @@ export function createTopicRepository(db: Database): TopicRepository {
         return requireRow(await findTopic(tx, id), NOT_FOUND, { topicId: id });
       });
     },
+
+    /**
+     * La materia va en el `where` además del id: reordenar no puede mover un
+     * tema de otra materia aunque llegue su id por error.
+     */
+    reorder(subjectId: number, ids: readonly number[]): Promise<Topic[]> {
+      return db.transaction(async (tx) => {
+        for (const [index, id] of ids.entries()) {
+          await tx
+            .update(topics)
+            .set({ position: index + 1 })
+            .where(and(eq(topics.id, id), eq(topics.subjectId, subjectId)));
+        }
+
+        return tx
+          .select()
+          .from(topics)
+          .where(eq(topics.subjectId, subjectId))
+          .orderBy(asc(topics.position), asc(topics.id));
+      });
+    },
   };
 }
 

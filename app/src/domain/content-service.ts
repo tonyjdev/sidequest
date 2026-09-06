@@ -3,16 +3,23 @@ import {
   assertName,
   assertPosition,
   assertPublishableUnder,
+  assertReorderIds,
   assertSlug,
+  assertStatusTransition,
   type ContentFields,
   type ContentPatch,
+  type ContentTransition,
   type Subject,
   type Subtopic,
   type Topic,
 } from '@app/domain/content.js';
 import { ConflictError, NotFoundError } from '@app/domain/errors.js';
-import type { Repositories } from '@app/domain/repositories.js';
-import type { ContentStatus } from '@app/domain/types.js';
+import type {
+  ContentQuery,
+  Repositories,
+  SubtopicQuery,
+  TopicQuery,
+} from '@app/domain/repositories.js';
 
 /**
  * Casos de uso de la jerarquía de contenido. La API y el MCP llaman aquí; no
@@ -26,11 +33,43 @@ import type { ContentStatus } from '@app/domain/types.js';
  *   y sus subtemas; publicarla no publica nada por su cuenta.
  */
 
+/** Un subtema con lo que el panel necesita saber de él sin abrir su ficha. */
+export interface SubtopicSummary {
+  readonly subtopic: Subtopic;
+  readonly questionCount: number;
+}
+
 export interface ContentInput {
   readonly slug: string;
   readonly name: string;
   readonly description?: string | null | undefined;
   readonly position?: number | undefined;
+}
+
+export function listSubjects(repos: Repositories, query?: ContentQuery): Promise<Subject[]> {
+  return repos.subjects.list(query);
+}
+
+export function listTopics(repos: Repositories, query?: TopicQuery): Promise<Topic[]> {
+  return repos.topics.list(query);
+}
+
+/**
+ * Los subtemas llegan con su recuento de preguntas: es lo que distingue en el
+ * panel un subtema vacío de uno que ya tiene con qué preguntar. Se pide en una
+ * sola consulta para toda la página, no una por fila.
+ */
+export async function listSubtopics(
+  repos: Repositories,
+  query?: SubtopicQuery,
+): Promise<SubtopicSummary[]> {
+  const subtopics = await repos.subtopics.list(query);
+  const counts = await repos.questions.countBySubtopic(subtopics.map((subtopic) => subtopic.id));
+
+  return subtopics.map((subtopic) => ({
+    subtopic,
+    questionCount: counts.get(subtopic.id) ?? 0,
+  }));
 }
 
 export async function createSubject(repos: Repositories, input: ContentInput): Promise<Subject> {
@@ -154,9 +193,11 @@ export async function updateSubtopic(
 export async function changeSubjectStatus(
   repos: Repositories,
   id: number,
-  status: ContentStatus,
+  status: ContentTransition,
 ): Promise<Subject> {
-  await requireSubject(repos, id);
+  const subject = await requireSubject(repos, id);
+
+  assertStatusTransition('subject', subject.status, status);
 
   return status === 'archived'
     ? repos.subjects.archiveTree(id)
@@ -166,9 +207,11 @@ export async function changeSubjectStatus(
 export async function changeTopicStatus(
   repos: Repositories,
   id: number,
-  status: ContentStatus,
+  status: ContentTransition,
 ): Promise<Topic> {
   const topic = await requireTopic(repos, id);
+
+  assertStatusTransition('topic', topic.status, status);
 
   if (status === 'published') {
     assertPublishableUnder('topic', await requireSubject(repos, topic.subjectId));
@@ -180,9 +223,11 @@ export async function changeTopicStatus(
 export async function changeSubtopicStatus(
   repos: Repositories,
   id: number,
-  status: ContentStatus,
+  status: ContentTransition,
 ): Promise<Subtopic> {
   const subtopic = await requireSubtopic(repos, id);
+
+  assertStatusTransition('subtopic', subtopic.status, status);
 
   if (status === 'published') {
     assertPublishableUnder('subtopic', await requireTopic(repos, subtopic.topicId));
@@ -191,6 +236,58 @@ export async function changeSubtopicStatus(
   return status === 'archived'
     ? repos.subtopics.archive(id)
     : repos.subtopics.setStatus(id, status);
+}
+
+/**
+ * Reordenar es repartir `position` 1..n entre los hermanos, así que llega la
+ * lista completa: `assertReorderIds` rechaza el subconjunto antes de escribir.
+ */
+export async function reorderSubjects(
+  repos: Repositories,
+  ids: readonly number[],
+): Promise<Subject[]> {
+  const current = await repos.subjects.list();
+
+  assertReorderIds(
+    current.map((subject) => subject.id),
+    ids,
+  );
+
+  return repos.subjects.reorder(ids);
+}
+
+export async function reorderTopics(
+  repos: Repositories,
+  subjectId: number,
+  ids: readonly number[],
+): Promise<Topic[]> {
+  await requireSubject(repos, subjectId);
+
+  const current = await repos.topics.list({ subjectIds: [subjectId] });
+
+  assertReorderIds(
+    current.map((topic) => topic.id),
+    ids,
+  );
+
+  return repos.topics.reorder(subjectId, ids);
+}
+
+export async function reorderSubtopics(
+  repos: Repositories,
+  topicId: number,
+  ids: readonly number[],
+): Promise<Subtopic[]> {
+  await requireTopic(repos, topicId);
+
+  const current = await repos.subtopics.list({ topicIds: [topicId] });
+
+  assertReorderIds(
+    current.map((subtopic) => subtopic.id),
+    ids,
+  );
+
+  return repos.subtopics.reorder(topicId, ids);
 }
 
 export async function requireSubject(repos: Repositories, id: number): Promise<Subject> {

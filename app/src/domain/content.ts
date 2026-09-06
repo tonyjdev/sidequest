@@ -78,6 +78,12 @@ export interface ContentPath {
   readonly subtopicName: string;
 }
 
+/**
+ * Los dos únicos destinos de una transición de estado (SQST-0007). Volver a
+ * borrador no existe: se publica desde borrador y se archiva desde donde sea.
+ */
+export type ContentTransition = Extract<ContentStatus, 'published' | 'archived'>;
+
 export function assertSlug(slug: string): void {
   if (!SLUG_PATTERN.test(slug)) {
     throw new InvariantError(
@@ -157,4 +163,84 @@ export function assertPublishableUnder(
     parentLevel: link.parentLevel,
     parentStatus: parent.status,
   });
+}
+
+/**
+ * Cómo se nombra cada nivel dentro de un mensaje. El género no es el mismo en
+ * los tres —«la materia» frente a «el tema»—, así que no hay plantilla común que
+ * sirva: cada uno lleva sus palabras.
+ */
+const LEVEL_WORDS = {
+  subject: {
+    subject: 'La materia',
+    object: 'una materia',
+    published: 'publicada',
+    archived: 'archivada',
+  },
+  topic: { subject: 'El tema', object: 'un tema', published: 'publicado', archived: 'archivado' },
+  subtopic: {
+    subject: 'El subtema',
+    object: 'un subtema',
+    published: 'publicado',
+    archived: 'archivado',
+  },
+} as const satisfies Record<
+  ContentLevel,
+  { subject: string; object: string; published: string; archived: string }
+>;
+
+/**
+ * Las transiciones son explícitas y son dos: `draft → published` y
+ * `cualquiera → archived`. Lo demás choca con el estado actual.
+ *
+ * Que archivar no tenga vuelta es deliberado: el histórico depende de que lo
+ * retirado siga retirado, y desarchivar en cascada dejaría publicado un árbol
+ * que nadie revisó (docs/decisiones.md §6).
+ */
+export function assertStatusTransition(
+  level: ContentLevel,
+  from: ContentStatus,
+  to: ContentTransition,
+): void {
+  const words = LEVEL_WORDS[level];
+
+  if (from === to) {
+    throw new ConflictError(`${words.subject} ya está ${words[to]}`, { level, from, to });
+  }
+
+  if (from === 'archived') {
+    throw new ConflictError(
+      `No se puede publicar ${words.object} ${words.archived}: solo se publica desde borrador`,
+      { level, from, to },
+    );
+  }
+}
+
+/**
+ * La reordenación recibe la lista completa de hermanos, en el orden nuevo, y no
+ * un subconjunto: repartir 1..n entre unos pocos dejaría posiciones repetidas
+ * con los que no vinieron. Se exige el mismo conjunto —sin repetidos, sin
+ * ausentes y sin extraños—, en cualquier orden.
+ */
+export function assertReorderIds(current: readonly number[], requested: readonly number[]): void {
+  const currentSet = new Set(current);
+  const seen = new Set<number>();
+  const duplicated: number[] = [];
+  const unknown: number[] = [];
+
+  for (const id of requested) {
+    if (seen.has(id)) duplicated.push(id);
+    else if (!currentSet.has(id)) unknown.push(id);
+
+    seen.add(id);
+  }
+
+  const missing = current.filter((id) => !seen.has(id));
+
+  if (duplicated.length === 0 && unknown.length === 0 && missing.length === 0) return;
+
+  throw new InvariantError(
+    'La reordenación necesita todos los hermanos exactamente una vez, sin ids ajenos',
+    { duplicated, unknown, missing },
+  );
 }

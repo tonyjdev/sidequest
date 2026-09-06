@@ -7,10 +7,14 @@ import {
   createSubject,
   createSubtopic,
   createTopic,
+  listSubtopics,
+  reorderSubtopics,
+  reorderTopics,
   updateSubject,
   updateTopic,
 } from '@app/domain/content-service.js';
 import { ConflictError, InvariantError, NotFoundError } from '@app/domain/errors.js';
+import { createQuestion } from '@app/domain/questions-service.js';
 import type { Repositories } from '@app/domain/repositories.js';
 import { createInMemoryRepositories } from '@app/domain/testing/in-memory.js';
 
@@ -187,5 +191,127 @@ describe('actualización', () => {
 
   it('rechaza actualizar lo que no existe', async () => {
     await expect(updateSubject(repos, 404, { name: 'X' })).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe('transiciones de estado', () => {
+  it('rechaza publicar lo que ya está publicado', async () => {
+    const topic = await publishedTopic();
+
+    await expect(changeTopicStatus(repos, topic.id, 'published')).rejects.toThrow(
+      'El tema ya está publicado',
+    );
+  });
+
+  it('rechaza publicar lo archivado: solo se publica desde borrador', async () => {
+    const topic = await publishedTopic();
+
+    await changeTopicStatus(repos, topic.id, 'archived');
+
+    await expect(changeTopicStatus(repos, topic.id, 'published')).rejects.toThrow(
+      /solo se publica desde borrador/,
+    );
+  });
+
+  it('rechaza archivar dos veces, con el género de cada nivel', async () => {
+    const subject = await publishedSubject();
+
+    await changeSubjectStatus(repos, subject.id, 'archived');
+
+    await expect(changeSubjectStatus(repos, subject.id, 'archived')).rejects.toThrow(
+      'La materia ya está archivada',
+    );
+  });
+
+  it('archiva desde borrador sin pasar por publicado', async () => {
+    const subject = await createSubject(repos, { slug: 'matematicas', name: 'Matemáticas' });
+
+    await expect(changeSubjectStatus(repos, subject.id, 'archived')).resolves.toMatchObject({
+      status: 'archived',
+    });
+  });
+});
+
+describe('reordenación', () => {
+  async function threeTopics() {
+    const subject = await publishedSubject();
+
+    return {
+      subjectId: subject.id,
+      algebra: await createTopic(repos, subject.id, { slug: 'algebra', name: 'Álgebra' }),
+      geometry: await createTopic(repos, subject.id, { slug: 'geometria', name: 'Geometría' }),
+      analysis: await createTopic(repos, subject.id, { slug: 'analisis', name: 'Análisis' }),
+    };
+  }
+
+  it('reparte position 1..n en el orden recibido', async () => {
+    const { subjectId, algebra, geometry, analysis } = await threeTopics();
+
+    const reordered = await reorderTopics(repos, subjectId, [analysis.id, algebra.id, geometry.id]);
+
+    expect(reordered.map((topic) => [topic.slug, topic.position])).toEqual([
+      ['analisis', 1],
+      ['algebra', 2],
+      ['geometria', 3],
+    ]);
+  });
+
+  it('rechaza un subconjunto de hermanos y no mueve nada', async () => {
+    const { subjectId, algebra } = await threeTopics();
+
+    await expect(reorderTopics(repos, subjectId, [algebra.id])).rejects.toThrow(InvariantError);
+    expect((await repos.topics.findById(algebra.id))?.position).toBe(0);
+  });
+
+  it('nombra en el detalle lo que sobra, lo que falta y lo repetido', async () => {
+    const { subjectId, algebra, geometry, analysis } = await threeTopics();
+    const other = await createSubject(repos, { slug: 'fisica', name: 'Física' });
+    const alien = await createTopic(repos, other.id, { slug: 'cinematica', name: 'Cinemática' });
+
+    const failure = await reorderTopics(repos, subjectId, [algebra.id, algebra.id, alien.id]).catch(
+      (error: unknown) => error,
+    );
+
+    expect(failure).toBeInstanceOf(InvariantError);
+    expect((failure as InvariantError).details).toEqual({
+      duplicated: [algebra.id],
+      unknown: [alien.id],
+      missing: [geometry.id, analysis.id],
+    });
+  });
+
+  it('exige que el padre exista', async () => {
+    await expect(reorderSubtopics(repos, 404, [])).rejects.toThrow(NotFoundError);
+  });
+});
+
+describe('listado de subtemas con recuento', () => {
+  it('cuenta las preguntas de cada subtema y deja el vacío en cero', async () => {
+    const topic = await publishedTopic();
+    const withQuestions = await createSubtopic(repos, topic.id, {
+      slug: 'ecuaciones',
+      name: 'Ecuaciones',
+    });
+    const empty = await createSubtopic(repos, topic.id, {
+      slug: 'polinomios',
+      name: 'Polinomios',
+    });
+
+    await createQuestion(repos, {
+      subtopicId: withQuestions.id,
+      type: 'single',
+      statement: '¿Cuánto es 2 + 2?',
+      options: [
+        { text: '4', isCorrect: true },
+        { text: '5', isCorrect: false },
+      ],
+    });
+
+    const summaries = await listSubtopics(repos, { topicIds: [topic.id] });
+
+    expect(summaries).toEqual([
+      { subtopic: expect.objectContaining({ id: withQuestions.id }) as unknown, questionCount: 1 },
+      { subtopic: expect.objectContaining({ id: empty.id }) as unknown, questionCount: 0 },
+    ]);
   });
 });

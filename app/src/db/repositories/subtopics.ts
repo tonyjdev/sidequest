@@ -72,6 +72,23 @@ export function createSubtopicRepository(db: Database): SubtopicRepository {
 
       return requireRow(await findSubtopic(id), NOT_FOUND, { subtopicId: id });
     },
+
+    reorder(topicId: number, ids: readonly number[]): Promise<Subtopic[]> {
+      return db.transaction(async (tx) => {
+        for (const [index, id] of ids.entries()) {
+          await tx
+            .update(subtopics)
+            .set({ position: index + 1 })
+            .where(and(eq(subtopics.id, id), eq(subtopics.topicId, topicId)));
+        }
+
+        return tx
+          .select()
+          .from(subtopics)
+          .where(eq(subtopics.topicId, topicId))
+          .orderBy(asc(subtopics.position), asc(subtopics.id));
+      });
+    },
   };
 
   async function findSubtopic(id: number): Promise<Subtopic | undefined> {

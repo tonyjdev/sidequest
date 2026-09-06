@@ -6,6 +6,7 @@ import { ApiError, type ErrorBody } from '@app/api/errors.js';
 import { buildServer } from '@app/api/server.js';
 import { loadConfig } from '@app/config/env.js';
 import { ConflictError, InvariantError, NotFoundError } from '@app/domain/errors.js';
+import { createInMemoryRepositories } from '@app/domain/testing/in-memory.js';
 
 const config = loadConfig({
   DATABASE_URL: 'mysql://sidequest:secreta@mysql:3306/sidequest',
@@ -16,6 +17,7 @@ const config = loadConfig({
 
 const dependencies = {
   config,
+  repositories: createInMemoryRepositories(),
   checkDatabase: () => Promise.resolve({ status: 'ok' as const, latency_ms: 1 }),
 };
 
