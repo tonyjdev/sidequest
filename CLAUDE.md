@@ -27,6 +27,7 @@ bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
 cp .env.example .env          # obligatorio antes del primer `up`
 docker compose up -d --build  # levanta app + MySQL
 docker compose ps             # ambos servicios deben figurar como (healthy)
+curl -s localhost:3000/api/v1/health   # sonda de salud: 200 con MySQL, 503 sin ella
 docker compose logs -f app
 docker compose down           # para; conserva el volumen de datos
 docker compose down -v        # borra también el volumen de datos

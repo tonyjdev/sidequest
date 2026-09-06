@@ -20,7 +20,7 @@ de ahí, `docker compose up -d` levanta en segundos.
 | Servicio | Imagen | Qué hace |
 | --- | --- | --- |
 | `mysql` | `mysql:8.4` | Base de datos. Crea la base y el usuario de la aplicación en el primer arranque, con las variables del `.env`. No hay ningún paso manual después. |
-| `app` | construida desde `Dockerfile` | La aplicación: API y servidor MCP. Hoy solo la sonda de vida; Fastify llega en SQST-0004. |
+| `app` | construida desde `Dockerfile` | La aplicación: API HTTP con Fastify bajo `/api/v1`. El servidor MCP llega en SQST-0020. |
 
 `app` declara `depends_on: mysql: condition: service_healthy`, así que no arranca hasta que MySQL
 responde a su sonda. La sonda de MySQL es `mysqladmin ping` cada 10 s, con 60 s de margen inicial
@@ -54,6 +54,15 @@ error: falta SIDEQUEST_ATTEMPT_SECRET en .env
 
 `.env` está en `.gitignore`. `.env.example` documenta cada variable y es el archivo que se versiona.
 
+Compose comprueba que la variable esté puesta; la aplicación la vuelve a validar al arrancar y
+falla nombrando la que falta o el valor que no encaja, en lugar de arrancar a medias:
+
+```
+Configuración inválida. Revisa el archivo .env:
+  - DATABASE_URL: es obligatoria
+  - SIDEQUEST_ATTEMPT_SECRET: debe tener al menos 32 caracteres; genérala con `openssl rand -hex 32`
+```
+
 ## Datos
 
 Los datos de MySQL viven en el volumen con nombre `sidequest_mysql-data`, no en el contenedor.
@@ -78,11 +87,30 @@ Los datos de MySQL viven en el volumen con nombre `sidequest_mysql-data`, no en 
 El panel queda fuera de la imagen: se construye aparte con `pnpm build` y se servirá desde
 SQST-0009.
 
-## Sonda de vida provisional
+## Sonda de salud
 
-`app` responde `GET /health` con `200`, que es lo que prueba el healthcheck del contenedor. Es un
-sustituto: SQST-0004 lo reemplaza por Fastify y por `GET /api/v1/health`, que además comprobará la
-conectividad con la base de datos y devolverá `503` cuando no la haya.
+`app` responde `GET /api/v1/health`, que es lo que prueba el healthcheck del contenedor:
+
+```bash
+curl -s localhost:3000/api/v1/health
+```
+
+```json
+{
+  "status": "ok",
+  "app": "sidequest",
+  "version": "0.1.0",
+  "uptime_s": 41,
+  "checks": { "database": { "status": "ok", "latency_ms": 2 } }
+}
+```
+
+Devuelve `200` con MySQL disponible y `503` sin ella, **con el mismo documento**: `status` pasa a
+`error` y `checks.database` explica el motivo. La forma no cambia entre los dos casos para que
+quien monitoriza vea *qué* comprobación falló, y no un mensaje genérico.
+
+La comprobación es un `SELECT 1`: mide la conexión y no depende de que exista ninguna tabla, así
+que vale igual antes y después de las migraciones de SQST-0005.
 
 ## Comandos habituales
 
