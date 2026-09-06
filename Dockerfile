@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
-# Imagen de la aplicación (API y MCP). Tres etapas —dependencias, compilación y
-# ejecución— para que la imagen final no arrastre el código fuente ni las
-# dependencias de desarrollo.
+# Imagen de la aplicación: la API, el MCP y el panel que ella misma sirve. Tres
+# etapas —dependencias, compilación y ejecución— para que la imagen final no
+# arrastre el código fuente ni las dependencias de desarrollo.
 
 ARG NODE_VERSION=24-alpine
 
@@ -22,17 +22,19 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY app/package.json ./app/
 COPY web/package.json ./web/
 
-# El filtro deja fuera el panel: esta imagen solo ejecuta la aplicación.
+# Sin filtro: en esta etapa se construyen los dos paquetes, y el panel necesita
+# sus dependencias para que Vite pueda empaquetarlo.
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
-    pnpm install --frozen-lockfile --filter @sidequest/app...
+    pnpm install --frozen-lockfile
 
 # --- Compilación ------------------------------------------------------------
 FROM deps AS build
 
 COPY tsconfig.base.json ./
 COPY app ./app
+COPY web ./web
 
-RUN pnpm --filter @sidequest/app run build
+RUN pnpm --recursive run build
 
 # --- Ejecución --------------------------------------------------------------
 FROM node:${NODE_VERSION} AS runtime
@@ -53,6 +55,9 @@ RUN --mount=type=cache,id=pnpm-store,target=/pnpm/store \
     pnpm install --frozen-lockfile --prod --filter @sidequest/app
 
 COPY --from=build /srv/sidequest/app/dist ./app/dist
+# El panel ya empaquetado: son archivos estáticos, así que no necesita ni sus
+# dependencias ni Node para servirse.
+COPY --from=build /srv/sidequest/web/dist ./web/dist
 
 USER node
 

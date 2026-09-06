@@ -5,8 +5,9 @@ import { defineConfig } from 'vitest/config';
 const appSrc = fileURLToPath(new URL('./app/src', import.meta.url));
 const webSrc = fileURLToPath(new URL('./web/src', import.meta.url));
 
-// Un proyecto por paquete: comparten el ejecutor pero no el entorno, para que el
-// panel pueda pasar a un DOM simulado sin arrastrar a la aplicación.
+// Un proyecto por paquete: comparten el ejecutor pero no el entorno. El panel
+// se prueba en un DOM simulado —navega, dibuja y pinta sus estados— sin que la
+// aplicación, que no tiene navegador, cargue nada de eso.
 export default defineConfig({
   test: {
     projects: [
@@ -24,7 +25,8 @@ export default defineConfig({
         test: {
           name: 'web',
           root: './web',
-          environment: 'node',
+          environment: 'jsdom',
+          setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.test.{ts,tsx}'],
         },
       },

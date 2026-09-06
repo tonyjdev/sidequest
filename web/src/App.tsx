@@ -1,10 +1,14 @@
-import { PANEL_TITLE, describePanel } from '@web/panel-info';
+import { RouterProvider, createBrowserRouter } from 'react-router';
+
+import { ThemeProvider } from '@web/components/theme-provider';
+import { panelRoutes } from '@web/routes';
+
+const router = createBrowserRouter(panelRoutes);
 
 export function App() {
   return (
-    <main>
-      <h1>{PANEL_TITLE}</h1>
-      <p>{describePanel()}</p>
-    </main>
+    <ThemeProvider>
+      <RouterProvider router={router} />
+    </ThemeProvider>
   );
 }

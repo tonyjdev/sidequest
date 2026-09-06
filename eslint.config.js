@@ -39,5 +39,12 @@ export default tseslint.config(
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
     },
   },
+  {
+    // Primitivas de shadcn/ui: las genera su CLI y exportan sus variantes junto al
+    // componente. Reescribirlas para contentar al recargado en caliente las
+    // separaría de su origen y las volvería imposibles de regenerar.
+    files: ['web/src/components/ui/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
   prettier,
 );

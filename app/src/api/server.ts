@@ -9,6 +9,13 @@ import {
 } from 'fastify-type-provider-zod';
 
 import { ApiError, type ApiErrorCode, type FieldIssue } from '@app/api/errors.js';
+import {
+  PANEL_INDEX,
+  defaultPanelRoot,
+  panelIsBuilt,
+  registerPanel,
+  wantsPanelDocument,
+} from '@app/api/panel.js';
 import { subjectRoutes, subtopicRoutes, topicRoutes } from '@app/api/routes/content.js';
 import { healthRoutes } from '@app/api/routes/health.js';
 import { questionRoutes, tagRoutes } from '@app/api/routes/questions.js';
@@ -19,6 +26,13 @@ import type { Repositories } from '@app/domain/repositories.js';
 
 /** Prefijo de todas las rutas de la API. Ver docs/especificacion.md §5. */
 export const API_PREFIX = '/api/v1';
+
+/**
+ * Lo que nunca es una página del panel: la API y el servidor MCP, que llega en
+ * SQST-0020. Debajo de estos prefijos, una ruta que no existe es un `404` con su
+ * envoltorio JSON, no el `index.html` de la aplicación de una sola página.
+ */
+const RESERVED_PREFIXES = [API_PREFIX, '/mcp'] as const;
 
 // Lo único que ve el cliente ante un fallo no previsto: el detalle queda en el log.
 const INTERNAL_MESSAGE = 'Error interno del servidor';
@@ -38,10 +52,18 @@ export interface ServerDependencies {
   readonly config: AppConfig;
   readonly checkDatabase: () => Promise<DatabaseCheck>;
   readonly repositories: Repositories;
+  /** Raíz del panel construido. Por defecto, el `web/dist` que acompaña a la aplicación. */
+  readonly panelRoot?: string;
 }
 
-export async function buildServer({ config, checkDatabase, repositories }: ServerDependencies) {
+export async function buildServer({
+  config,
+  checkDatabase,
+  repositories,
+  panelRoot = defaultPanelRoot(),
+}: ServerDependencies) {
   const app = Fastify({ logger: { level: config.logLevel } });
+  const servesPanel = await panelIsBuilt(panelRoot);
 
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
@@ -51,7 +73,20 @@ export async function buildServer({ config, checkDatabase, repositories }: Serve
   // cuando no coincide, en lugar de anunciar la URL del panel a cualquiera.
   await app.register(fastifyCors, { origin: [config.webPublicUrl] });
 
+  if (servesPanel) {
+    await registerPanel(app, panelRoot);
+    app.log.info({ panelRoot }, 'sirviendo el panel construido');
+  } else {
+    app.log.info({ panelRoot }, 'sin panel construido: solo se sirve la API');
+  }
+
   app.setNotFoundHandler((request, reply) => {
+    // Las rutas del panel viven en su enrutador, no aquí: el navegador recibe el
+    // documento y él decide qué pantalla toca.
+    if (servesPanel && wantsPanelDocument(request, RESERVED_PREFIXES)) {
+      return reply.type('text/html').sendFile(PANEL_INDEX);
+    }
+
     const error = new ApiError('not_found', 'La ruta solicitada no existe', {
       method: request.method,
       path: request.url.split('?')[0] ?? request.url,
