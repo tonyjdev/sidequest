@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { ApiError, type ErrorBody } from '@app/api/errors.js';
 import { buildServer } from '@app/api/server.js';
 import { loadConfig } from '@app/config/env.js';
+import { ConflictError, InvariantError, NotFoundError } from '@app/domain/errors.js';
 
 const config = loadConfig({
   DATABASE_URL: 'mysql://sidequest:secreta@mysql:3306/sidequest',
@@ -43,6 +44,20 @@ async function buildServerWithProbeRoutes() {
     throw new ApiError('conflict', 'Ya existe una materia con ese slug', [
       { field: 'slug', message: 'ya está en uso' },
     ]);
+  });
+
+  app.get('/api/v1/_pruebas/dominio/invariante', () => {
+    throw new InvariantError('Una pregunta publicada necesita al menos dos opciones', {
+      total: 1,
+    });
+  });
+
+  app.get('/api/v1/_pruebas/dominio/ausente', () => {
+    throw new NotFoundError('La materia no existe', { subjectId: 404 });
+  });
+
+  app.get('/api/v1/_pruebas/dominio/conflicto', () => {
+    throw new ConflictError('No se puede publicar un tema cuya materia no está publicada');
   });
 
   return app;
@@ -93,7 +108,7 @@ describe('manejador de errores único', () => {
     await app.close();
   });
 
-  it('traduce un ApiError del dominio a su estado y su código', async () => {
+  it('traduce un ApiError a su estado y su código', async () => {
     const app = await buildServerWithProbeRoutes();
     const response = await app.inject({ method: 'GET', url: '/api/v1/_pruebas/conflicto' });
 
@@ -104,6 +119,38 @@ describe('manejador de errores único', () => {
         message: 'Ya existe una materia con ese slug',
         details: [{ field: 'slug', message: 'ya está en uso' }],
       },
+    });
+
+    await app.close();
+  });
+
+  // El dominio no conoce el 422 ni el 409: los nombra por su razón y la
+  // traducción vive solo aquí.
+  it.each([
+    ['invariante', 422, 'validation_failed'],
+    ['ausente', 404, 'not_found'],
+    ['conflicto', 409, 'conflict'],
+  ])('traduce un error de dominio «%s» a %i', async (kind, status, code) => {
+    const app = await buildServerWithProbeRoutes();
+    const response = await app.inject({ method: 'GET', url: `/api/v1/_pruebas/dominio/${kind}` });
+
+    expect(response.statusCode).toBe(status);
+    expect(response.json<ErrorBody>().error.code).toBe(code);
+
+    await app.close();
+  });
+
+  it('conserva el detalle del error de dominio', async () => {
+    const app = await buildServerWithProbeRoutes();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/v1/_pruebas/dominio/invariante',
+    });
+
+    expect(response.json<ErrorBody>().error).toEqual({
+      code: 'validation_failed',
+      message: 'Una pregunta publicada necesita al menos dos opciones',
+      details: { total: 1 },
     });
 
     await app.close();

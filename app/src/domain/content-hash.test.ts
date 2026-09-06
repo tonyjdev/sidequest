@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { contentHashOf } from '@app/db/content-hash.js';
+import { contentHashOf } from '@app/domain/content-hash.js';
 
 describe('contentHashOf', () => {
   it('devuelve un sha256 en hexadecimal', () => {

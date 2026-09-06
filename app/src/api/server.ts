@@ -8,16 +8,28 @@ import {
   type ZodFastifySchemaValidationError,
 } from 'fastify-type-provider-zod';
 
-import { ApiError, type FieldIssue } from '@app/api/errors.js';
+import { ApiError, type ApiErrorCode, type FieldIssue } from '@app/api/errors.js';
 import { healthRoutes } from '@app/api/routes/health.js';
 import type { AppConfig } from '@app/config/env.js';
 import type { DatabaseCheck } from '@app/db/health-check.js';
+import { DomainError, type DomainErrorKind } from '@app/domain/errors.js';
 
 /** Prefijo de todas las rutas de la API. Ver docs/especificacion.md §5. */
 export const API_PREFIX = '/api/v1';
 
 // Lo único que ve el cliente ante un fallo no previsto: el detalle queda en el log.
 const INTERNAL_MESSAGE = 'Error interno del servidor';
+
+/**
+ * El único punto donde una razón del dominio se convierte en un estado HTTP. El
+ * dominio no conoce el 422 ni el 409; el MCP hará su propia traducción sin
+ * repetir ninguna regla.
+ */
+const API_CODE_BY_DOMAIN_KIND: Readonly<Record<DomainErrorKind, ApiErrorCode>> = {
+  invalid: 'validation_failed',
+  not_found: 'not_found',
+  conflict: 'conflict',
+};
 
 export interface ServerDependencies {
   readonly config: AppConfig;
@@ -67,6 +79,11 @@ export async function buildServer({ config, checkDatabase }: ServerDependencies)
  */
 function toApiError(error: unknown): ApiError {
   if (error instanceof ApiError) return error;
+
+  if (error instanceof DomainError) {
+    return new ApiError(API_CODE_BY_DOMAIN_KIND[error.kind], error.message, error.details);
+  }
+
   if (typeof error !== 'object' || error === null) {
     return new ApiError('internal_error', INTERNAL_MESSAGE);
   }
