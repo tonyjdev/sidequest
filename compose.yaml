@@ -7,6 +7,13 @@ services:
   mysql:
     image: mysql:8.4
     restart: unless-stopped
+    # Crear los disparadores que imponen las invariantes de publicación exige el
+    # privilegio SUPER mientras el registro binario esté activo y esta variable
+    # en OFF, que es como viene MySQL 8.4. Aquí no hay réplicas ni recuperación
+    # a un punto en el tiempo —la copia de seguridad es un volcado lógico—, así
+    # que confiar en quien crea las rutinas es el permiso mínimo que hace
+    # aplicable la migración con el usuario de la aplicación.
+    command: ['--log-bin-trust-function-creators=1']
     environment:
       # El propio arranque de la imagen crea la base y el usuario con estas
       # variables: no hay ningún paso manual después del primer `up`.

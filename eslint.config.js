@@ -27,7 +27,7 @@ export default tseslint.config(
     languageOptions: { globals: globals.node },
   },
   {
-    files: ['app/**/*.ts', 'vitest.config.ts'],
+    files: ['app/**/*.ts', 'vitest.config.ts', 'drizzle.config.ts'],
     languageOptions: { globals: globals.node },
   },
   {

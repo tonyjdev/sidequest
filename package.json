@@ -18,11 +18,17 @@
     "lint": "eslint . && prettier --check .",
     "lint:fix": "eslint . --fix && prettier --write .",
     "typecheck": "tsc --noEmit && pnpm --recursive run typecheck",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "db:generate": "drizzle-kit generate --config drizzle.config.ts",
+    "db:migrate": "pnpm --filter @sidequest/app run db:migrate",
+    "db:rollback": "pnpm --filter @sidequest/app run db:rollback",
+    "db:seed": "pnpm --filter @sidequest/app run db:seed",
+    "db:studio": "drizzle-kit studio --config drizzle.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "catalog:",
+    "drizzle-kit": "^0.31.10",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "^7.1.1",
