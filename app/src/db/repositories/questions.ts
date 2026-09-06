@@ -1,7 +1,7 @@
-import { and, asc, count, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, like, type SQL } from 'drizzle-orm';
 
 import type { Database } from '@app/db/client.js';
-import { requireRow, type Executor } from '@app/db/repositories/shared.js';
+import { requireRow, withDatabaseInvariants, type Executor } from '@app/db/repositories/shared.js';
 import {
   questionOptions,
   questionResources,
@@ -24,6 +24,7 @@ import type {
   NewQuestionInput,
   QuestionQuery,
   QuestionRepository,
+  QuestionUpdate,
 } from '@app/domain/repositories.js';
 import type { ContentStatus } from '@app/domain/types.js';
 
@@ -42,7 +43,7 @@ interface QuestionValues {
 export function createQuestionRepository(db: Database): QuestionRepository {
   return {
     list(query?: QuestionQuery): Promise<Question[]> {
-      const { statuses, subtopicIds, difficulties, tagIds } = query ?? {};
+      const { statuses, subtopicIds, difficulties, tagIds, search } = query ?? {};
 
       if (
         statuses?.length === 0 ||
@@ -72,6 +73,7 @@ export function createQuestionRepository(db: Database): QuestionRepository {
               ? undefined
               : inArray(questions.difficulty, [...difficulties]),
             taggedQuestions === undefined ? undefined : inArray(questions.id, taggedQuestions),
+            statementMatching(search),
           ),
         )
         .orderBy(asc(questions.id))
@@ -95,11 +97,6 @@ export function createQuestionRepository(db: Database): QuestionRepository {
         .orderBy(asc(questions.id));
     },
 
-    /**
-     * Borrador → opciones → publicar, dentro de una transacción. No es una
-     * preferencia: los disparadores impiden crear una pregunta ya publicada,
-     * porque en ese instante todavía no tiene opciones.
-     */
     async countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>> {
       if (subtopicIds.length === 0) return new Map();
 
@@ -112,101 +109,108 @@ export function createQuestionRepository(db: Database): QuestionRepository {
       return new Map(rows.map((row) => [row.subtopicId, row.total]));
     },
 
-    async create(input: NewQuestionInput): Promise<QuestionDetail> {
-      return db.transaction(async (tx) => {
-        const [inserted] = await tx.insert(questions).values({
-          subtopicId: input.question.subtopicId,
-          type: input.question.type,
-          statement: input.question.statement,
-          explanation: input.question.explanation,
-          difficulty: input.question.difficulty,
-          status: 'draft',
-          visibleOptions: input.question.visibleOptions,
-          contentHash: contentHashOf(input.question.statement),
-        });
+    /**
+     * Borrador → opciones → publicar, dentro de una transacción. No es una
+     * preferencia: los disparadores impiden crear una pregunta ya publicada,
+     * porque en ese instante todavía no tiene opciones.
+     */
+    create(input: NewQuestionInput): Promise<QuestionDetail> {
+      return withDatabaseInvariants(() =>
+        db.transaction(async (tx) => {
+          const [inserted] = await tx.insert(questions).values({
+            subtopicId: input.question.subtopicId,
+            type: input.question.type,
+            statement: input.question.statement,
+            explanation: input.question.explanation,
+            difficulty: input.question.difficulty,
+            status: 'draft',
+            visibleOptions: input.question.visibleOptions,
+            contentHash: contentHashOf(input.question.statement),
+          });
 
-        const id = inserted.insertId;
+          const id = inserted.insertId;
 
-        await writeOptions(tx, id, input.options);
-        await writeResources(tx, id, input.resources);
-        await writeTags(tx, id, input.tagIds);
+          await writeOptions(tx, id, input.options);
+          await writeResources(tx, id, input.resources);
+          await writeTags(tx, id, input.tagIds);
 
-        if (input.status !== 'draft') {
-          await tx.update(questions).set({ status: input.status }).where(eq(questions.id, id));
-        }
+          if (input.status !== 'draft') {
+            await tx.update(questions).set({ status: input.status }).where(eq(questions.id, id));
+          }
 
-        return requireRow(await loadDetail(tx, id), NOT_FOUND, { questionId: id });
-      });
-    },
-
-    async update(id: number, patch: QuestionPatch): Promise<Question> {
-      const values = toQuestionValues(patch);
-
-      if (Object.keys(values).length > 0) {
-        await db.update(questions).set(values).where(eq(questions.id, id));
-      }
-
-      return requireRow(await findQuestion(db, id), NOT_FOUND, { questionId: id });
+          return requireRow(await loadDetail(tx, id), NOT_FOUND, { questionId: id });
+        }),
+      );
     },
 
     /**
-     * La pregunta pasa por borrador dentro de la transacción: los disparadores
-     * cuentan las opciones una a una, así que vaciarlas con la pregunta
-     * publicada fallaría al borrar la penúltima. Al volver a publicarla, las
-     * invariantes se comprueban de nuevo sobre las opciones nuevas.
+     * El agregado entero en una transacción. Cuando cambian las opciones de una
+     * pregunta publicada, pasa por borrador dentro de ella: los disparadores las
+     * cuentan una a una, así que vaciarlas publicada fallaría al borrar la
+     * penúltima. Al volver a publicarla se comprueban de nuevo, ya con las
+     * opciones y el tipo nuevos.
      */
-    async replaceOptions(
-      id: number,
-      values: readonly NewQuestionOption[],
-    ): Promise<QuestionOption[]> {
-      return db.transaction(async (tx) => {
-        const question = requireRow(await findQuestion(tx, id), NOT_FOUND, { questionId: id });
-        const published = question.status === 'published';
+    update(id: number, update: QuestionUpdate): Promise<QuestionDetail> {
+      return withDatabaseInvariants(() =>
+        db.transaction(async (tx) => {
+          const question = requireRow(await findQuestion(tx, id), NOT_FOUND, { questionId: id });
+          const values = toQuestionValues(update.patch);
+          const parked = update.options !== undefined && question.status === 'published';
 
-        if (published) {
-          await tx.update(questions).set({ status: 'draft' }).where(eq(questions.id, id));
-        }
+          if (parked) await setStatusOf(tx, id, 'draft');
 
-        await tx.delete(questionOptions).where(eq(questionOptions.questionId, id));
-        await writeOptions(tx, id, values);
+          if (Object.keys(values).length > 0) {
+            await tx.update(questions).set(values).where(eq(questions.id, id));
+          }
 
-        if (published) {
-          await tx.update(questions).set({ status: 'published' }).where(eq(questions.id, id));
-        }
+          if (update.options !== undefined) {
+            await tx.delete(questionOptions).where(eq(questionOptions.questionId, id));
+            await writeOptions(tx, id, update.options);
+          }
 
-        return loadOptions(tx, id);
-      });
-    },
+          if (update.resources !== undefined) {
+            await tx.delete(questionResources).where(eq(questionResources.questionId, id));
+            await writeResources(tx, id, update.resources);
+          }
 
-    async replaceResources(
-      id: number,
-      values: readonly NewQuestionResource[],
-    ): Promise<QuestionResource[]> {
-      return db.transaction(async (tx) => {
-        requireRow(await findQuestion(tx, id), NOT_FOUND, { questionId: id });
-        await tx.delete(questionResources).where(eq(questionResources.questionId, id));
-        await writeResources(tx, id, values);
+          if (update.tagIds !== undefined) {
+            await tx.delete(questionTag).where(eq(questionTag.questionId, id));
+            await writeTags(tx, id, update.tagIds);
+          }
 
-        return loadResources(tx, id);
-      });
-    },
+          if (parked) await setStatusOf(tx, id, 'published');
 
-    async setTags(id: number, tagIds: readonly number[]): Promise<Tag[]> {
-      return db.transaction(async (tx) => {
-        requireRow(await findQuestion(tx, id), NOT_FOUND, { questionId: id });
-        await tx.delete(questionTag).where(eq(questionTag.questionId, id));
-        await writeTags(tx, id, tagIds);
-
-        return loadTags(tx, id);
-      });
+          return requireRow(await loadDetail(tx, id), NOT_FOUND, { questionId: id });
+        }),
+      );
     },
 
     async setStatus(id: number, status: ContentStatus): Promise<Question> {
-      await db.update(questions).set({ status }).where(eq(questions.id, id));
+      await withDatabaseInvariants(() => setStatusOf(db, id, status));
 
       return requireRow(await findQuestion(db, id), NOT_FOUND, { questionId: id });
     },
   };
+}
+
+function setStatusOf(executor: Executor, id: number, status: ContentStatus): Promise<unknown> {
+  return executor.update(questions).set({ status }).where(eq(questions.id, id));
+}
+
+/**
+ * Búsqueda por texto del enunciado. La cotejación por defecto de MySQL 8.4
+ * —`utf8mb4_0900_ai_ci`— ya ignora mayúsculas y acentos, así que basta un
+ * `LIKE`; lo que sí hay que neutralizar son los comodines del propio patrón,
+ * para que buscar «100%» no se convierta en buscar cualquier cosa.
+ */
+function statementMatching(search: string | undefined): SQL | undefined {
+  const term = search?.trim() ?? '';
+
+  return term === '' ? undefined : like(questions.statement, `%${escapeLike(term)}%`);
+}
+
+function escapeLike(term: string): string {
+  return term.replaceAll(/[\\%_]/gu, (character) => `\\${character}`);
 }
 
 function toQuestionValues(patch: QuestionPatch): QuestionValues {

@@ -14,9 +14,7 @@ import type {
   NewQuestionResource,
   Question,
   QuestionDetail,
-  QuestionOption,
   QuestionPatch,
-  QuestionResource,
   Tag,
 } from '@app/domain/questions.js';
 import type { Session, SessionKey, SessionPause } from '@app/domain/sessions.js';
@@ -88,6 +86,8 @@ export interface QuestionQuery {
   readonly subtopicIds?: readonly number[] | undefined;
   readonly difficulties?: readonly Difficulty[] | undefined;
   readonly tagIds?: readonly number[] | undefined;
+  /** Coincidencia parcial en el enunciado, sin distinguir mayúsculas ni acentos. */
+  readonly search?: string | undefined;
   readonly limit?: number | undefined;
   readonly offset?: number | undefined;
 }
@@ -106,6 +106,21 @@ export interface NewQuestionInput {
   readonly tagIds: readonly number[];
 }
 
+/**
+ * La edición del agregado, en una sola operación. Lo que no viene no se toca, y
+ * la colección que viene sustituye entera a la anterior.
+ *
+ * Es una y no cuatro porque una pregunta a medio editar —opciones nuevas con el
+ * enunciado viejo, o al revés— no es un estado que deba llegar a existir: la
+ * pregunta se lee y se escribe como una unidad.
+ */
+export interface QuestionUpdate {
+  readonly patch: QuestionPatch;
+  readonly options?: readonly NewQuestionOption[] | undefined;
+  readonly resources?: readonly NewQuestionResource[] | undefined;
+  readonly tagIds?: readonly number[] | undefined;
+}
+
 export interface QuestionRepository {
   list(query?: QuestionQuery): Promise<Question[]>;
   findById(id: number): Promise<QuestionDetail | null>;
@@ -118,13 +133,7 @@ export interface QuestionRepository {
    */
   countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>>;
   create(input: NewQuestionInput): Promise<QuestionDetail>;
-  update(id: number, patch: QuestionPatch): Promise<Question>;
-  replaceOptions(id: number, options: readonly NewQuestionOption[]): Promise<QuestionOption[]>;
-  replaceResources(
-    id: number,
-    resources: readonly NewQuestionResource[],
-  ): Promise<QuestionResource[]>;
-  setTags(id: number, tagIds: readonly number[]): Promise<Tag[]>;
+  update(id: number, update: QuestionUpdate): Promise<QuestionDetail>;
   setStatus(id: number, status: ContentStatus): Promise<Question>;
 }
 

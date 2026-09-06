@@ -27,6 +27,7 @@ import type {
   ContentQuery,
   NewQuestionInput,
   QuestionQuery,
+  QuestionUpdate,
   Repositories,
   SubtopicQuery,
   TopicQuery,
@@ -191,6 +192,51 @@ export function createInMemoryRepositories(): InMemoryRepositories {
     resources.push(...inserted);
 
     return inserted;
+  }
+
+  /**
+   * La transacción del adaptador real, imitada: una escritura del agregado que
+   * rompa una invariante a mitad no puede dejar rastro, o la prueba en memoria
+   * diría que sí se puede.
+   */
+  function atomically<T>(run: () => T): Promise<T> {
+    const snapshot = {
+      questions: [...questions],
+      options: [...options],
+      resources: [...resources],
+      questionTags: [...questionTags],
+    };
+
+    try {
+      return Promise.resolve(run());
+    } catch (error) {
+      questions = snapshot.questions;
+      options = snapshot.options;
+      resources = snapshot.resources;
+      questionTags = snapshot.questionTags;
+
+      // Rechazo y no excepción: el adaptador real tampoco falla antes de
+      // devolver la promesa, y quien llama al puerto no debería notar cuál de
+      // los dos tiene delante.
+      return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+
+  /**
+   * Lo mismo que hace el `LIKE` del adaptador sobre una cotejación
+   * `utf8mb4_0900_ai_ci`: ni mayúsculas ni acentos cuentan.
+   */
+  function matchesSearch(statement: string, search: string | undefined): boolean {
+    const term = search?.trim() ?? '';
+
+    return term === '' || folded(statement).includes(folded(term));
+  }
+
+  function folded(text: string): string {
+    return text
+      .normalize('NFD')
+      .replaceAll(/\p{Diacritic}/gu, '')
+      .toLowerCase();
   }
 
   /** El equivalente de los disparadores de `0001`, para que la prueba falle igual aquí. */
@@ -409,6 +455,7 @@ export function createInMemoryRepositories(): InMemoryRepositories {
           .filter((question) => query?.subtopicIds?.includes(question.subtopicId) ?? true)
           .filter((question) => query?.difficulties?.includes(question.difficulty) ?? true)
           .filter((question) => query?.tagIds === undefined || tagged.has(question.id))
+          .filter((question) => matchesSearch(question.statement, query?.search))
           .sort((a, b) => a.id - b.id);
 
         const offset = query?.offset ?? 0;
@@ -471,56 +518,49 @@ export function createInMemoryRepositories(): InMemoryRepositories {
           detailOf(replace(questions, { ...question, status: input.status, updatedAt: now() })),
         );
       },
-      update(id: number, patch: QuestionPatch): Promise<Question> {
-        const question = requireRow(questions, id, 'La pregunta no existe');
-        const updated: Question = {
-          ...question,
-          subtopicId: patch.subtopicId ?? question.subtopicId,
-          type: patch.type ?? question.type,
-          statement: patch.statement ?? question.statement,
-          explanation: patch.explanation === undefined ? question.explanation : patch.explanation,
-          difficulty: patch.difficulty ?? question.difficulty,
-          visibleOptions:
-            patch.visibleOptions === undefined ? question.visibleOptions : patch.visibleOptions,
-          version: nextVersion(question, patch),
-          contentHash:
-            patch.statement === undefined ? question.contentHash : contentHashOf(patch.statement),
-          updatedAt: now(),
-        };
+      update(id: number, update: QuestionUpdate): Promise<QuestionDetail> {
+        const { patch } = update;
 
-        replace(questions, updated);
-        assertStillPublishable(id);
+        return atomically(() => {
+          const question = requireRow(questions, id, 'La pregunta no existe');
+          const updated: Question = {
+            ...question,
+            subtopicId: patch.subtopicId ?? question.subtopicId,
+            type: patch.type ?? question.type,
+            statement: patch.statement ?? question.statement,
+            explanation: patch.explanation === undefined ? question.explanation : patch.explanation,
+            difficulty: patch.difficulty ?? question.difficulty,
+            visibleOptions:
+              patch.visibleOptions === undefined ? question.visibleOptions : patch.visibleOptions,
+            version: nextVersion(question, patch),
+            contentHash:
+              patch.statement === undefined ? question.contentHash : contentHashOf(patch.statement),
+            updatedAt: now(),
+          };
 
-        return Promise.resolve(updated);
+          replace(questions, updated);
+
+          if (update.options !== undefined) {
+            options = options.filter((option) => option.questionId !== id);
+            insertOptions(id, update.options);
+          }
+
+          if (update.resources !== undefined) {
+            resources = resources.filter((resource) => resource.questionId !== id);
+            insertResources(id, update.resources);
+          }
+
+          if (update.tagIds !== undefined) {
+            questionTags = questionTags.filter((link) => link.questionId !== id);
+            questionTags.push(...update.tagIds.map((tagId) => ({ questionId: id, tagId })));
+          }
+
+          assertStillPublishable(id);
+
+          return detailOf(updated);
+        });
       },
-      replaceOptions(id: number, values: readonly NewQuestionOption[]): Promise<QuestionOption[]> {
-        requireRow(questions, id, 'La pregunta no existe');
-        options = options.filter((option) => option.questionId !== id);
 
-        const inserted = insertOptions(id, values);
-
-        assertStillPublishable(id);
-
-        return Promise.resolve(inserted);
-      },
-      replaceResources(
-        id: number,
-        values: readonly NewQuestionResource[],
-      ): Promise<QuestionResource[]> {
-        requireRow(questions, id, 'La pregunta no existe');
-        resources = resources.filter((resource) => resource.questionId !== id);
-
-        return Promise.resolve(insertResources(id, values));
-      },
-      setTags(id: number, tagIds: readonly number[]): Promise<Tag[]> {
-        requireRow(questions, id, 'La pregunta no existe');
-        questionTags = questionTags.filter((link) => link.questionId !== id);
-        questionTags.push(...tagIds.map((tagId) => ({ questionId: id, tagId })));
-
-        return Promise.resolve([
-          ...detailOf(requireRow(questions, id, 'La pregunta no existe')).tags,
-        ]);
-      },
       setStatus(id: number, status: ContentStatus): Promise<Question> {
         const question = requireRow(questions, id, 'La pregunta no existe');
         const updated = replace(questions, { ...question, status, updatedAt: now() });

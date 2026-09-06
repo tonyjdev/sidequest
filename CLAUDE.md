@@ -63,7 +63,7 @@ El gestor de paquetes es `pnpm`. La base de datos es MySQL 8.4 en Docker, con vo
 Los puertos, las variables y el ciclo de vida del volumen están en
 `docs/development/docker.md`; el esquema, las migraciones y el sembrado, en
 `docs/development/database.md`; los modelos, los puertos de repositorio y las invariantes, en
-`docs/development/dominio.md`; el contrato HTTP de la jerarquía de contenido, en
+`docs/development/dominio.md`; el contrato HTTP de contenido, preguntas y etiquetas, en
 `docs/development/api.md`.
 
 ## Arquitectura
