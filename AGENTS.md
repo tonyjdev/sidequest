@@ -98,9 +98,10 @@ bash tests/shell/run.sh # suites de shell, obligatorio si tocas scripts/
 docker compose up -d --build && docker compose ps
 ```
 
-Mientras no exista la tarea de andamiaje (SQST-0002), esos comandos no existen todavía: ejecuta lo
-que el repositorio tenga y di cuáles te saltaste y por qué. Nunca informes de una puerta como
-superada si no llegó a ejecutarse.
+`pnpm check`, `pnpm test`, `pnpm build` y las suites de shell existen desde SQST-0002.
+`docker compose` y `pnpm test:e2e` los traen SQST-0003 y SQST-0022: hasta entonces ejecuta lo que
+el repositorio tenga y di cuáles te saltaste y por qué. Nunca informes de una puerta como superada
+si no llegó a ejecutarse.
 
 Toda tarea que toque el esquema debe pasar además una migración limpia sobre una base vacía.
 

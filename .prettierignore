@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+.worktrees/
+pnpm-lock.yaml
+
+# La documentación está escrita a mano con tablas alineadas y ancho fijo; el
+# .editorconfig ya la gobierna.
+*.md

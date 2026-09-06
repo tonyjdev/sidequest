@@ -8,26 +8,33 @@ concretos y el contexto de arquitectura.
 
 ## Comandos
 
-> El proyecto está en fase de andamiaje. Estos comandos se materializan en las tareas SQST-0002 a
-> SQST-0004; hasta entonces, algunos no existen todavía.
+> El espacio de trabajo, TypeScript y la puerta de calidad existen desde SQST-0002. Docker Compose
+> y la base de datos llegan después; el segundo bloque marca qué comando trae cada tarea.
 
 ```bash
-docker compose up -d          # levanta app + MySQL
-docker compose logs -f app
-docker compose down -v        # borra también el volumen de datos
-
+pnpm install                  # instala el espacio de trabajo (app + web)
 pnpm dev                      # API y panel en modo desarrollo
 pnpm check                    # lint + tipos + pruebas unitarias
+pnpm lint                     # ESLint y comprobación de formato
+pnpm format                   # Prettier sobre el código
+pnpm typecheck                # solo los tipos
 pnpm test                     # Vitest
 pnpm test -- selection        # un solo archivo de pruebas
-pnpm test:e2e                 # Playwright sobre el panel
 pnpm build
 
-pnpm db:generate              # genera migraciones Drizzle desde el esquema
+bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
+```
+
+Todavía no existen; los trae la tarea indicada:
+
+```bash
+docker compose up -d          # levanta app + MySQL                     SQST-0003
+docker compose logs -f app
+docker compose down -v        # borra también el volumen de datos
+pnpm db:generate              # genera migraciones Drizzle del esquema  SQST-0005
 pnpm db:migrate               # aplica migraciones
 pnpm db:studio                # inspección del esquema
-
-bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
+pnpm test:e2e                 # Playwright sobre el panel               SQST-0022
 ```
 
 El ciclo de tarea es de tres fases —`/init-task` prepara, `/start-task` implementa, `/close-task`
@@ -51,13 +58,17 @@ El gestor de paquetes es `pnpm`. La base de datos es MySQL en Docker, con volume
 Monolito Node.js + TypeScript con cuatro superficies sobre un mismo dominio:
 
 ```text
-app
-├── domain        seleccion ponderada, composicion del intento, evaluacion, invariantes
+app/src           paquete @sidequest/app
+├── domain        selección ponderada, composición del intento, evaluación, invariantes
 ├── db            esquema Drizzle, migraciones, repositorios
 ├── api           Fastify, /api/v1
-├── mcp           servidor MCP sobre HTTP streamable, /mcp
-└── web           panel React + Vite + shadcn/ui
+└── mcp           servidor MCP sobre HTTP streamable, /mcp
+web/src           paquete @sidequest/web: panel React + Vite + shadcn/ui
 ```
+
+`app` y `web` son los dos paquetes del espacio de trabajo pnpm, en la raíz del repositorio. Cada
+uno importa lo suyo por alias —`@app/*` y `@web/*` apuntan a su propio `src`—, y la configuración
+de TypeScript, ESLint, Prettier y Vitest es única y vive en la raíz.
 
 **Las reglas de dominio viven en `domain`, no en los adaptadores.** La API y el MCP son dos
 puertas a las mismas reglas: si una regla acaba duplicada en ambas, está en el sitio equivocado.
