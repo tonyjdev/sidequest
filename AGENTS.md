@@ -98,10 +98,13 @@ bash tests/shell/run.sh # suites de shell, obligatorio si tocas scripts/
 docker compose up -d --build && docker compose ps
 ```
 
-`pnpm check`, `pnpm test`, `pnpm build` y las suites de shell existen desde SQST-0002.
-`docker compose` y `pnpm test:e2e` los traen SQST-0003 y SQST-0022: hasta entonces ejecuta lo que
+`pnpm check`, `pnpm test`, `pnpm build` y las suites de shell existen desde SQST-0002;
+`docker compose`, desde SQST-0003. `pnpm test:e2e` lo trae SQST-0022: hasta entonces ejecuta lo que
 el repositorio tenga y di cuáles te saltaste y por qué. Nunca informes de una puerta como superada
 si no llegó a ejecutarse.
+
+Compose necesita un `.env` —cópialo de `.env.example`— y levanta un solo entorno a la vez. Ver
+`docs/development/docker.md`.
 
 Toda tarea que toque el esquema debe pasar además una migración limpia sobre una base vacía.
 

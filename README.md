@@ -38,15 +38,25 @@ Las preguntas son independientes del desarrollo en curso y no alteran su context
 
 ## Arranque
 
-Requisitos: Node 24 y pnpm 11. El entorno en Docker llega en SQST-0003; por ahora el proyecto se
-ejecuta directamente con Node.
+Requisitos: Docker con Compose para el entorno completo, y Node 24 con pnpm 11 para trabajar sobre
+el código.
 
 ```bash
-cp .env.example .env
+cp .env.example .env          # ajusta las contraseñas y el secreto
+docker compose up -d --build  # aplicación en :3000 y MySQL en :3306
+docker compose ps             # ambos servicios deben figurar como (healthy)
+```
+
+Para iterar sobre el código sin reconstruir la imagen:
+
+```bash
 pnpm install
 pnpm dev                      # API en :3000 y panel en :5173
 pnpm check                    # lint + tipos + pruebas unitarias
 ```
+
+Si el 3000 o el 3306 ya están ocupados en tu máquina, cambia `APP_HOST_PORT` y `MYSQL_HOST_PORT`
+en el `.env`: son los puertos publicados hacia fuera y no afectan a cómo se conecta la aplicación.
 
 ## Documentación
 
@@ -56,6 +66,8 @@ pnpm check                    # lint + tipos + pruebas unitarias
 | [docs/decisiones.md](docs/decisiones.md) | Decisiones de dominio y su justificación |
 | [docs/referencias.md](docs/referencias.md) | Referencias externas y documentación de apoyo |
 | [docs/brief-original.md](docs/brief-original.md) | Documento de arranque original, sin modificar |
+| [docs/development/docker.md](docs/development/docker.md) | Entorno local: servicios, puertos, variables y datos |
+| [docs/development/worktrees.md](docs/development/worktrees.md) | Worktrees de tarea en paralelo |
 
 ## Tareas
 
