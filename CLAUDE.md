@@ -26,7 +26,23 @@ pnpm build
 pnpm db:generate              # genera migraciones Drizzle desde el esquema
 pnpm db:migrate               # aplica migraciones
 pnpm db:studio                # inspección del esquema
+
+bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
 ```
+
+El ciclo de tarea es de tres fases —`/init-task` prepara, `/start-task` implementa, `/close-task`
+integra— y cada tarea vive en su propio worktree bajo `.worktrees/`:
+
+```bash
+scripts/git/task-worktree.sh init SQST-0005 esquema-de-datos
+scripts/git/task-worktree.sh preflight        # dónde estoy y de qué tarea es este checkout
+scripts/git/task-worktree.sh recover SQST-0005
+scripts/git/task-worktree.sh finish SQST-0005 # integración posterior a la fusión
+```
+
+Ese script es la única implementación de las transiciones de Git del ciclo. Ver
+`docs/development/worktrees.md`. **Docker Compose es de uno en uno**: cada worktree levantaría su
+propio proyecto, con su propio volumen y los mismos puertos.
 
 El gestor de paquetes es `pnpm`. La base de datos es MySQL en Docker, con volumen persistente.
 

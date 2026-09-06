@@ -27,12 +27,37 @@ WORKSPACE_PROJECT_KEY: SQST
 WORKSPACE_USER_EMAIL: test@example.com
 BRANCH_DEVELOP: develop
 BRANCH_FEATURE_PREFIX: feat/
+WORKTREE_CLI: scripts/git/task-worktree.sh
 CHECK_CMD: pnpm check
-TEST_JS_CMD: pnpm test
+TEST_E2E_CMD: pnpm test:e2e
 BUILD_CMD: pnpm build
+SHELL_TEST_CMD: bash tests/shell/run.sh
 CHANGELOG_CMD: (none)
 CHANGELOG_FILES: (none)
 ```
+
+Dos reglas gobiernan la ejecución que abre `start-task`: lo que se convertiría en una tarea
+`suggested` o `tech_debt` se **arregla en la misma rama**, salvo que sea demasiado grande para
+pertenecer ahí (cambio de contrato o de modelo de datos, otro contexto, una decisión que no te
+corresponde, un diff que quien revise *esta* tarea no puede seguir), y al terminar se deja
+**`open` la siguiente tarea** si no lo estaba ya. El material de `domain_issue` y `watchlist` se
+registra como documento de Workspace, nunca se "arregla".
+
+### Tres fases, un worktree por tarea
+
+Varios agentes pueden trabajar aquí a la vez, así que cada tarea recibe un checkout propio.
+`/init-task SQST-0005` crea `.worktrees/sqst-0005` desde `origin/develop` en
+`feat/sqst-0005-<slug>` y prepara su entorno; **la rama es la reclamación**, porque el estado de la
+tarea vive en Workspace y aquí no hay ningún archivo que mover.
+
+| Fase | Comando | Qué hace |
+| --- | --- | --- |
+| Preparar | `/init-task {clave}` | Lee la tarea en Workspace, deriva el slug de su título, crea el worktree y la rama, copia el `.env` e instala. No confirma nada ni transiciona nada. |
+| Implementar | `/start-task` | **No toca Git.** Confirma el worktree con `preflight`, carga los documentos y el prompt, y pasa la tarea a `in_progress`. |
+| Integrar | `/close-task` | Ejecuta la puerta de calidad, escribe los documentos de cierre, confirma, publica, abre el PR, lo fusiona, cierra la tarea y entrega la limpieza a `finish`. |
+
+`scripts/git/task-worktree.sh` es la única implementación de esas transiciones de Git. Ningún
+comando de agente crea ramas ni worktrees por su cuenta. Ver `docs/development/worktrees.md`.
 
 Las tareas están numeradas para ejecutarse en secuencia: `SQST-0001`, `SQST-0002`, … Cada una
 asume que las anteriores están hechas. No empieces una tarea sin comprobar el estado de la
@@ -49,10 +74,13 @@ Los cambios de estado pasan por los scripts de la skill `workspace-task-creator`
 
 ## Flujo de trabajo
 
-- Empieza desde `develop`.
-- Crea ramas `feat/<clave-tarea-en-minusculas>-<slug-kebab>`, por ejemplo
-  `feat/sqst-0005-esquema-drizzle`.
-- Deja el árbol limpio antes de cambiar de rama.
+- **No crees ramas ni worktrees a mano.** `/init-task` lo hace, con su cerrojo; tú trabajas dentro
+  del worktree que te da.
+- Una tarea es una rama, un worktree y un PR. Nunca cambies de rama dentro de tu worktree ni entres
+  en el worktree de otra tarea.
+- El checkout primario no es un espacio de trabajo: solo la integración escribe en él.
+- No confirmes durante la implementación. `close-task` confirma todo junto, para que el trabajo siga
+  siendo visible en `git status` hasta entonces.
 - No deshagas ni «limpies» cambios que no hiciste tú, salvo petición explícita.
 - Mantén el cambio ceñido al comportamiento pedido.
 
@@ -62,12 +90,17 @@ Ejecuta el conjunto más pequeño que demuestre que el cambio funciona, y dilo s
 ejecutarlo.
 
 ```bash
-pnpm check          # lint + tipos + pruebas unitarias
-pnpm test           # Vitest
-pnpm test:e2e       # Playwright, solo si cambia el panel
+pnpm check              # lint + tipos + pruebas unitarias
+pnpm test               # Vitest
+pnpm test:e2e           # Playwright, solo si cambia el panel
 pnpm build
+bash tests/shell/run.sh # suites de shell, obligatorio si tocas scripts/
 docker compose up -d --build && docker compose ps
 ```
+
+Mientras no exista la tarea de andamiaje (SQST-0002), esos comandos no existen todavía: ejecuta lo
+que el repositorio tenga y di cuáles te saltaste y por qué. Nunca informes de una puerta como
+superada si no llegó a ejecutarse.
 
 Toda tarea que toque el esquema debe pasar además una migración limpia sobre una base vacía.
 
