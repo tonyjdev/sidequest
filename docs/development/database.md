@@ -162,7 +162,7 @@ Docker.
 
 ```bash
 docker compose up -d mysql
-pnpm test -- schema.integration
+pnpm test schema.integration
 ```
 
 ## Si algo falla

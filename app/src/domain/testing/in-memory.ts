@@ -89,6 +89,21 @@ export function createInMemoryRepositories(): InMemoryRepositories {
     return [...rows].sort((a, b) => a.position - b.position || a.id - b.id);
   }
 
+  /** Reparte `position` 1..n entre los ids recibidos y deja quietos a los demás. */
+  function withPositions<T extends { id: number; position: number; updatedAt: Date }>(
+    rows: T[],
+    ids: readonly number[],
+    belongs: (row: T) => boolean,
+  ): T[] {
+    const positions = new Map(ids.map((id, index) => [id, index + 1]));
+
+    return rows.map((row) => {
+      const position = positions.get(row.id);
+
+      return position === undefined || !belongs(row) ? row : { ...row, position, updatedAt: now() };
+    });
+  }
+
   function patched<T extends ContentFields>(row: T, patch: ContentPatch): T {
     return {
       ...row,
@@ -265,6 +280,11 @@ export function createInMemoryRepositories(): InMemoryRepositories {
           replace(subjects, { ...subject, status: 'archived', updatedAt: now() }),
         );
       },
+      reorder(ids: readonly number[]): Promise<Subject[]> {
+        subjects = withPositions(subjects, ids, () => true);
+
+        return Promise.resolve(ordered(subjects));
+      },
     },
 
     topics: {
@@ -315,6 +335,11 @@ export function createInMemoryRepositories(): InMemoryRepositories {
 
         return Promise.resolve(replace(topics, { ...topic, status: 'archived', updatedAt: now() }));
       },
+      reorder(subjectId: number, ids: readonly number[]): Promise<Topic[]> {
+        topics = withPositions(topics, ids, (topic) => topic.subjectId === subjectId);
+
+        return Promise.resolve(ordered(topics.filter((topic) => topic.subjectId === subjectId)));
+      },
     },
 
     subtopics: {
@@ -362,6 +387,13 @@ export function createInMemoryRepositories(): InMemoryRepositories {
           replace(subtopics, { ...subtopic, status: 'archived', updatedAt: now() }),
         );
       },
+      reorder(topicId: number, ids: readonly number[]): Promise<Subtopic[]> {
+        subtopics = withPositions(subtopics, ids, (subtopic) => subtopic.topicId === topicId);
+
+        return Promise.resolve(
+          ordered(subtopics.filter((subtopic) => subtopic.topicId === topicId)),
+        );
+      },
     },
 
     questions: {
@@ -395,6 +427,17 @@ export function createInMemoryRepositories(): InMemoryRepositories {
               question.subtopicId === subtopicId && question.contentHash === contentHash,
           ),
         );
+      },
+      countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>> {
+        const counts = new Map<number, number>();
+
+        for (const question of questions) {
+          if (!subtopicIds.includes(question.subtopicId)) continue;
+
+          counts.set(question.subtopicId, (counts.get(question.subtopicId) ?? 0) + 1);
+        }
+
+        return Promise.resolve(counts);
       },
       create(input: NewQuestionInput): Promise<QuestionDetail> {
         const timestamp = now();

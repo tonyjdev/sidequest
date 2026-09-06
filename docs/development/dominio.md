@@ -10,7 +10,7 @@ adaptadores, está en el sitio equivocado.
 | --- | --- |
 | `types.ts` | El vocabulario cerrado: estados, tipos de pregunta, dificultades, tipos de recurso |
 | `errors.ts` | `DomainError` y sus tres razones: `invalid`, `not_found`, `conflict` |
-| `content.ts` | Materia, tema y subtema, con la validación del slug y la cadena de publicación |
+| `content.ts` | Materia, tema y subtema: validación del slug, cadena de publicación y transiciones |
 | `questions.ts` | Pregunta, opciones y recursos, con las tres invariantes de publicación |
 | `attempts.ts` | El intento y su invariante: nunca se presenta sin una correcta entre las mostradas |
 | `sessions.ts` | La sesión de trabajo de un agente |
@@ -31,8 +31,9 @@ intentos y parámetros—. Hay dos implementaciones:
 - `app/src/domain/testing/in-memory.ts` los resuelve con arrays. No se empaqueta en `dist`.
 
 Los puertos guardan y leen; no deciden. Lo único que sí les pertenece es la atomicidad: cuando una
-operación exige varias escrituras —crear una pregunta con sus opciones, archivar un árbol— el puerto
-la ofrece como una sola y cada implementación la hace indivisible con lo que tenga.
+operación exige varias escrituras —crear una pregunta con sus opciones, archivar un árbol,
+repartir las posiciones de un conjunto de hermanos— el puerto la ofrece como una sola y cada
+implementación la hace indivisible con lo que tenga.
 
 ```ts
 import { createInMemoryRepositories } from '@app/domain/testing/in-memory.js';
@@ -42,6 +43,21 @@ const repos = createInMemoryRepositories();
 
 await createQuestion(repos, { subtopicId, type: 'single', statement: '…', options: [...] });
 ```
+
+## Las transiciones de estado son dos
+
+`draft → published` y `cualquiera → archived`. No hay más: `assertStatusTransition` rechaza con
+`ConflictError` republicar lo archivado, volver a borrador y repetir la transición que ya se hizo.
+
+Está en `content.ts` y no en los adaptadores por la razón de siempre: la API lo llama desde
+`POST /{nivel}/{id}/publish` y el MCP lo llamará desde donde le toque, sin que ninguno tenga que
+saberse la tabla. Publicar comprueba además la cadena de tres eslabones —un nivel no se publica si
+su padre no lo está—; archivar baja en cascada y no tiene vuelta, porque el histórico depende de
+que lo retirado siga retirado.
+
+Reordenar sigue el mismo reparto: `assertReorderIds` exige el conjunto completo de hermanos, una
+vez cada uno y sin ids ajenos, antes de que el puerto reparta `position` 1..n. El contrato HTTP que
+sale de todo esto está en [api.md](api.md).
 
 ## Las invariantes están escritas dos veces
 
@@ -87,8 +103,9 @@ número absurdo no puede dejar la aplicación sin arrancar.
 ## Verificación
 
 ```bash
-pnpm test -- src/domain          # el dominio entero, sin MySQL
-pnpm test -- repositories.integration   # los adaptadores Drizzle; se saltan sin MySQL delante
+pnpm test src/domain             # el dominio entero, sin MySQL
+pnpm test content                # el dominio y su contrato HTTP
+pnpm test repositories.integration      # los adaptadores Drizzle; se saltan sin MySQL delante
 ```
 
 Las pruebas de integración crean y borran su propia base —`sidequest_test_repositorios`—, así que

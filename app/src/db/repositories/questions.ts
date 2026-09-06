@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray } from 'drizzle-orm';
+import { and, asc, count, eq, inArray } from 'drizzle-orm';
 
 import type { Database } from '@app/db/client.js';
 import { requireRow, type Executor } from '@app/db/repositories/shared.js';
@@ -100,6 +100,18 @@ export function createQuestionRepository(db: Database): QuestionRepository {
      * preferencia: los disparadores impiden crear una pregunta ya publicada,
      * porque en ese instante todavía no tiene opciones.
      */
+    async countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>> {
+      if (subtopicIds.length === 0) return new Map();
+
+      const rows = await db
+        .select({ subtopicId: questions.subtopicId, total: count() })
+        .from(questions)
+        .where(inArray(questions.subtopicId, [...subtopicIds]))
+        .groupBy(questions.subtopicId);
+
+      return new Map(rows.map((row) => [row.subtopicId, row.total]));
+    },
+
     async create(input: NewQuestionInput): Promise<QuestionDetail> {
       return db.transaction(async (tx) => {
         const [inserted] = await tx.insert(questions).values({

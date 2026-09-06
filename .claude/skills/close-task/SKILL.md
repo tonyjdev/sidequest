@@ -125,7 +125,7 @@ The `result` document must include:
 
 The `test` document must include:
 
-- automated commands, suites, and focused cases to run (`pnpm test -- <path>`, `pnpm test:e2e --grep`, `bash tests/shell/run.sh`);
+- automated commands, suites, and focused cases to run (`pnpm test <patrón>`, `pnpm test:e2e --grep`, `bash tests/shell/run.sh`);
 - manual test steps, expected results, and any seeded content, imported batch or session state needed to reproduce them;
 - an explicit note when there is no manual surface or manual testing did not apply;
 - evidence or artifacts needed to audit the verification.

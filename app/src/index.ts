@@ -1,13 +1,19 @@
 import { buildServer } from '@app/api/server.js';
 import { loadConfig, type AppConfig } from '@app/config/env.js';
+import { createDb } from '@app/db/client.js';
 import { checkDatabase } from '@app/db/health-check.js';
 import { createPool, toDatabaseProbe } from '@app/db/pool.js';
+import { createRepositories } from '@app/db/repositories/index.js';
 
 const config = loadConfigOrExit();
 const pool = createPool(config.databaseUrl);
 const probe = toDatabaseProbe(pool);
 
-const app = await buildServer({ config, checkDatabase: () => checkDatabase(probe) });
+const app = await buildServer({
+  config,
+  checkDatabase: () => checkDatabase(probe),
+  repositories: createRepositories(createDb(pool)),
+});
 
 // Docker envía SIGTERM al parar el contenedor. Sin cerrar aquí, esperaría diez
 // segundos a que el proceso reaccione antes de matarlo.

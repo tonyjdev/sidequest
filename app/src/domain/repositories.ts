@@ -56,6 +56,8 @@ export interface SubjectRepository {
   setStatus(id: number, status: ContentStatus): Promise<Subject>;
   /** Archiva la materia y, en la misma operación, sus temas y sus subtemas. */
   archiveTree(id: number): Promise<Subject>;
+  /** Reparte `position` 1..n en el orden recibido, de una sola vez. */
+  reorder(ids: readonly number[]): Promise<Subject[]>;
 }
 
 export interface TopicRepository {
@@ -67,6 +69,7 @@ export interface TopicRepository {
   setStatus(id: number, status: ContentStatus): Promise<Topic>;
   /** Archiva el tema y sus subtemas. */
   archiveTree(id: number): Promise<Topic>;
+  reorder(subjectId: number, ids: readonly number[]): Promise<Topic[]>;
 }
 
 export interface SubtopicRepository {
@@ -77,6 +80,7 @@ export interface SubtopicRepository {
   update(id: number, patch: ContentPatch): Promise<Subtopic>;
   setStatus(id: number, status: ContentStatus): Promise<Subtopic>;
   archive(id: number): Promise<Subtopic>;
+  reorder(topicId: number, ids: readonly number[]): Promise<Subtopic[]>;
 }
 
 export interface QuestionQuery {
@@ -107,6 +111,12 @@ export interface QuestionRepository {
   findById(id: number): Promise<QuestionDetail | null>;
   /** Duplicados dentro del mismo subtema: es una advertencia de la importación, no un veto. */
   findByContentHash(subtopicId: number, contentHash: string): Promise<Question[]>;
+  /**
+   * Cuántas preguntas cuelgan de cada subtema, en cualquier estado: el panel
+   * cuenta lo que hay, no lo que está publicado. Los subtemas sin ninguna no
+   * aparecen en el mapa.
+   */
+  countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>>;
   create(input: NewQuestionInput): Promise<QuestionDetail>;
   update(id: number, patch: QuestionPatch): Promise<Question>;
   replaceOptions(id: number, options: readonly NewQuestionOption[]): Promise<QuestionOption[]>;

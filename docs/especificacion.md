@@ -285,7 +285,9 @@ quien monitoriza necesita ver qué comprobación falló.
 | GET/POST/PATCH | `/subtopics`, `/subtopics/{id}` | Subtemas |
 | GET/POST/PATCH | `/questions`, `/questions/{id}` | Preguntas, opciones y recursos |
 | GET/POST/PATCH | `/tags`, `/tags/{id}` | Etiquetas |
-| POST | `/subjects/{id}/archive`, `/topics/{id}/archive`, `/subtopics/{id}/archive`, `/questions/{id}/archive` | Archivado, nunca borrado físico |
+| POST | `/subjects/{id}/publish`, `/topics/{id}/publish`, `/subtopics/{id}/publish` | Publicación. Exige el padre ya publicado y el propio nodo en borrador |
+| POST | `/subjects/{id}/archive`, `/topics/{id}/archive`, `/subtopics/{id}/archive`, `/questions/{id}/archive` | Archivado, nunca borrado físico. Arrastra a los descendientes |
+| POST | `/subjects/reorder`, `/topics/reorder`, `/subtopics/reorder` | Orden manual: todos los hermanos en el orden nuevo, `position` 1..n |
 | GET/PATCH | `/settings` | Parámetros globales: opciones visibles, ponderación, enfriamiento, frecuencia |
 | POST | `/quiz/next` | Devuelve un intento compuesto y su `attempt_token` |
 | POST | `/quiz/answer` | Recibe `attempt_token` y las opciones elegidas; registra y devuelve corrección y explicación |
@@ -301,6 +303,11 @@ quien monitoriza necesita ver qué comprobación falló.
 
 `/quiz/next` no marca nada como consumido: el intento se registra al responder. Si la sesión
 abandona la pregunta, no queda rastro.
+
+El estado del contenido **no se edita con `PATCH`**: se mueve por las rutas de transición, y solo
+existen dos —`draft → published` y `cualquiera → archived`—. Ni se vuelve a borrador ni se
+desarchiva. El detalle del contrato de contenido está en
+[development/api.md](development/api.md).
 
 ## 6. Servidor MCP
 

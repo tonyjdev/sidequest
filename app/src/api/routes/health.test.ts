@@ -4,12 +4,15 @@ import { buildServer } from '@app/api/server.js';
 import { APP_NAME, APP_VERSION } from '@app/app-info.js';
 import { loadConfig } from '@app/config/env.js';
 import type { DatabaseCheck } from '@app/db/health-check.js';
+import { createInMemoryRepositories } from '@app/domain/testing/in-memory.js';
 
 const config = loadConfig({
   DATABASE_URL: 'mysql://sidequest:secreta@mysql:3306/sidequest',
   SIDEQUEST_ATTEMPT_SECRET: 'a'.repeat(64),
   LOG_LEVEL: 'silent',
 });
+
+const repositories = createInMemoryRepositories();
 
 interface HealthBody {
   status: string;
@@ -20,7 +23,11 @@ interface HealthBody {
 }
 
 async function probe(database: DatabaseCheck) {
-  const app = await buildServer({ config, checkDatabase: () => Promise.resolve(database) });
+  const app = await buildServer({
+    config,
+    repositories,
+    checkDatabase: () => Promise.resolve(database),
+  });
   const response = await app.inject({ method: 'GET', url: '/api/v1/health' });
   await app.close();
 
@@ -72,6 +79,7 @@ describe('GET /api/v1/health', () => {
   it('no cuelga de la raíz: la sonda vive bajo el prefijo de la API', async () => {
     const app = await buildServer({
       config,
+      repositories,
       checkDatabase: () => Promise.resolve({ status: 'ok' as const, latency_ms: 1 }),
     });
 

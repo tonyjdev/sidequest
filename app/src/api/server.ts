@@ -9,10 +9,12 @@ import {
 } from 'fastify-type-provider-zod';
 
 import { ApiError, type ApiErrorCode, type FieldIssue } from '@app/api/errors.js';
+import { subjectRoutes, subtopicRoutes, topicRoutes } from '@app/api/routes/content.js';
 import { healthRoutes } from '@app/api/routes/health.js';
 import type { AppConfig } from '@app/config/env.js';
 import type { DatabaseCheck } from '@app/db/health-check.js';
 import { DomainError, type DomainErrorKind } from '@app/domain/errors.js';
+import type { Repositories } from '@app/domain/repositories.js';
 
 /** Prefijo de todas las rutas de la API. Ver docs/especificacion.md §5. */
 export const API_PREFIX = '/api/v1';
@@ -34,9 +36,10 @@ const API_CODE_BY_DOMAIN_KIND: Readonly<Record<DomainErrorKind, ApiErrorCode>> =
 export interface ServerDependencies {
   readonly config: AppConfig;
   readonly checkDatabase: () => Promise<DatabaseCheck>;
+  readonly repositories: Repositories;
 }
 
-export async function buildServer({ config, checkDatabase }: ServerDependencies) {
+export async function buildServer({ config, checkDatabase, repositories }: ServerDependencies) {
   const app = Fastify({ logger: { level: config.logLevel } });
 
   app.setValidatorCompiler(validatorCompiler);
@@ -69,6 +72,9 @@ export async function buildServer({ config, checkDatabase }: ServerDependencies)
   });
 
   await app.register(healthRoutes({ checkDatabase }), { prefix: API_PREFIX });
+  await app.register(subjectRoutes({ repositories }), { prefix: API_PREFIX });
+  await app.register(topicRoutes({ repositories }), { prefix: API_PREFIX });
+  await app.register(subtopicRoutes({ repositories }), { prefix: API_PREFIX });
 
   return app;
 }

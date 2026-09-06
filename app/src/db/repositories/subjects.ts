@@ -79,6 +79,20 @@ export function createSubjectRepository(db: Database): SubjectRepository {
         return requireRow(await findSubject(tx, id), NOT_FOUND, { subjectId: id });
       });
     },
+
+    /** Una sola transacción: a medias quedarían dos materias en la misma posición. */
+    reorder(ids: readonly number[]): Promise<Subject[]> {
+      return db.transaction(async (tx) => {
+        for (const [index, id] of ids.entries()) {
+          await tx
+            .update(subjects)
+            .set({ position: index + 1 })
+            .where(eq(subjects.id, id));
+        }
+
+        return tx.select().from(subjects).orderBy(asc(subjects.position), asc(subjects.id));
+      });
+    },
   };
 }
 

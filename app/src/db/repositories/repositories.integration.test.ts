@@ -145,6 +145,57 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
 
       expect(published.map((subject) => subject.id)).toEqual([subjectId]);
     });
+
+    it('reparte las posiciones de una sola vez y en el orden recibido', async () => {
+      const { subjectId } = await publishedPath();
+      const geometry = await createTopic(repos, subjectId, {
+        slug: 'geometria',
+        name: 'Geometría',
+      });
+      const analysis = await createTopic(repos, subjectId, {
+        slug: 'analisis',
+        name: 'Análisis',
+      });
+      const [algebra] = await repos.topics.list({ subjectIds: [subjectId] });
+
+      const reordered = await repos.topics.reorder(subjectId, [
+        analysis.id,
+        algebra?.id ?? 0,
+        geometry.id,
+      ]);
+
+      expect(reordered.map((topic) => [topic.slug, topic.position])).toEqual([
+        ['analisis', 1],
+        ['algebra', 2],
+        ['geometria', 3],
+      ]);
+    });
+
+    it('no mueve un tema de otra materia aunque llegue su id', async () => {
+      const { subjectId } = await publishedPath();
+      const other = await createSubject(repos, { slug: 'fisica', name: 'Física' });
+      const alien = await createTopic(repos, other.id, {
+        slug: 'cinematica',
+        name: 'Cinemática',
+      });
+
+      await repos.topics.reorder(subjectId, [alien.id]);
+
+      expect((await repos.topics.findById(alien.id))?.position).toBe(0);
+    });
+
+    it('cuenta las preguntas de cada subtema en una sola consulta', async () => {
+      const { subtopicId } = await publishedQuestion();
+      const empty = await createSubtopic(repos, await requireTopicId(subtopicId), {
+        slug: 'polinomios',
+        name: 'Polinomios',
+      });
+
+      const counts = await repos.questions.countBySubtopic([subtopicId, empty.id]);
+
+      expect(counts.get(subtopicId)).toBe(1);
+      expect(counts.get(empty.id)).toBeUndefined();
+    });
   });
 
   describe('preguntas', () => {
@@ -519,6 +570,12 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
     await changeSubtopicStatus(repos, subtopic.id, 'published');
 
     return { subjectId: subject.id, topicId: topic.id, subtopicId: subtopic.id };
+  }
+
+  async function requireTopicId(subtopicId: number): Promise<number> {
+    const subtopic = await repos.subtopics.findById(subtopicId);
+
+    return subtopic?.topicId ?? 0;
   }
 
   async function publishedQuestion(): Promise<{
