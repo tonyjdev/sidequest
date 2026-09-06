@@ -4,9 +4,9 @@ import type { Connection, Pool } from 'mysql2/promise';
 import * as schema from '@app/db/schema.js';
 
 /**
- * Cliente Drizzle sobre una conexión ya creada. Los repositorios llegan en
- * SQST-0006; aquí solo se ata el esquema al pool para que el sembrado, las
- * migraciones y las pruebas hablen con la base por el mismo sitio.
+ * Cliente Drizzle sobre una conexión ya creada. Ata el esquema al pool para que
+ * los repositorios de `db/repositories/`, el sembrado, las migraciones y las
+ * pruebas hablen con la base por el mismo sitio.
  */
 export type Database = MySql2Database<typeof schema>;
 

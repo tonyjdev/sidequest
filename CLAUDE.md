@@ -62,7 +62,8 @@ Ese script es la única implementación de las transiciones de Git del ciclo. Ve
 El gestor de paquetes es `pnpm`. La base de datos es MySQL 8.4 en Docker, con volumen persistente.
 Los puertos, las variables y el ciclo de vida del volumen están en
 `docs/development/docker.md`; el esquema, las migraciones y el sembrado, en
-`docs/development/database.md`.
+`docs/development/database.md`; los modelos, los puertos de repositorio y las invariantes, en
+`docs/development/dominio.md`.
 
 ## Arquitectura
 
@@ -83,6 +84,9 @@ de TypeScript, ESLint, Prettier y Vitest es única y vive en la raíz.
 
 **Las reglas de dominio viven en `domain`, no en los adaptadores.** La API y el MCP son dos
 puertas a las mismas reglas: si una regla acaba duplicada en ambas, está en el sitio equivocado.
+`domain` no importa Drizzle, Fastify ni el MCP, y habla con la persistencia por los puertos de
+`domain/repositories.ts`; `db/repositories/` los implementa y `domain/testing/in-memory.ts` los
+resuelve en memoria para las pruebas.
 
 **Los intentos son inmutables.** `attempts` guarda una copia del enunciado, de las opciones que se
 mostraron y de la versión de la pregunta. Nunca reconstruyas un intento histórico leyendo la

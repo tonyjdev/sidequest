@@ -30,8 +30,9 @@ export interface ErrorBody {
 }
 
 /**
- * Error que el manejador único traduce a su estado HTTP y a su envelope. El
- * dominio y los repositorios lo lanzan; los controladores no capturan nada.
+ * Error que el manejador único traduce a su estado HTTP y a su envelope. Lo
+ * lanza la capa HTTP; el dominio lanza `DomainError`, que `toApiError` traduce
+ * a uno de estos códigos. Los controladores no capturan nada.
  */
 export class ApiError extends Error {
   constructor(

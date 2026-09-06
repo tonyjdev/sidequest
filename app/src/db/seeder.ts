@@ -1,7 +1,7 @@
 import { eq } from 'drizzle-orm';
 
 import type { Database } from '@app/db/client.js';
-import { contentHashOf } from '@app/db/content-hash.js';
+import { contentHashOf } from '@app/domain/content-hash.js';
 import {
   questionOptions,
   questionResources,

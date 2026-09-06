@@ -6,6 +6,7 @@ import { createDb, type Database } from '@app/db/client.js';
 import { resolveTestDatabaseUrl, TEST_DATABASE_NAME, withDatabase } from '@app/db/database-url.js';
 import { applyMigrations, rollbackLast } from '@app/db/migrator.js';
 import { seedDevelopmentContent } from '@app/db/seeder.js';
+import { canConnect } from '@app/db/testing/mysql.js';
 
 /**
  * Invariantes del esquema contra MySQL de verdad: los disparadores, las claves
@@ -463,15 +464,3 @@ describe.skipIf(!available)('esquema de base de datos', () => {
     return { questionId, optionIds };
   }
 });
-
-async function canConnect(url: string): Promise<boolean> {
-  try {
-    const connection = await createConnection({ uri: url, connectTimeout: 2000 });
-
-    await connection.end();
-
-    return true;
-  } catch {
-    return false;
-  }
-}
