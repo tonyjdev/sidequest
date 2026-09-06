@@ -1,5 +1,6 @@
-# El contexto solo necesita los manifiestos, la configuración de TypeScript y
-# app/. Todo lo demás alarga la construcción sin entrar en la imagen.
+# El contexto necesita los manifiestos, la configuración de TypeScript y el
+# código de los dos paquetes: la imagen construye la aplicación y el panel que
+# ella misma sirve. Todo lo demás alarga la construcción sin entrar en la imagen.
 .git
 .github
 .claude
@@ -11,10 +12,6 @@ node_modules
 docs
 scripts
 tests
-web/src
-web/index.html
-web/vite.config.ts
-web/tsconfig.json
 .env
 .env.*
 !.env.example

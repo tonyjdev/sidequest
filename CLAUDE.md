@@ -64,7 +64,8 @@ Los puertos, las variables y el ciclo de vida del volumen están en
 `docs/development/docker.md`; el esquema, las migraciones y el sembrado, en
 `docs/development/database.md`; los modelos, los puertos de repositorio y las invariantes, en
 `docs/development/dominio.md`; el contrato HTTP de contenido, preguntas y etiquetas, en
-`docs/development/api.md`.
+`docs/development/api.md`; el armazón del panel, sus rutas y su cliente de API, en
+`docs/development/panel.md`.
 
 ## Arquitectura
 
@@ -74,9 +75,13 @@ Monolito Node.js + TypeScript con cuatro superficies sobre un mismo dominio:
 app/src           paquete @sidequest/app
 ├── domain        selección ponderada, composición del intento, evaluación, invariantes
 ├── db            esquema Drizzle, migraciones, repositorios
-├── api           Fastify, /api/v1
+├── api           Fastify, /api/v1, y el panel construido servido en /
 └── mcp           servidor MCP sobre HTTP streamable, /mcp
 web/src           paquete @sidequest/web: panel React + Vite + shadcn/ui
+├── components    armazón, primitivas de shadcn/ui y los estados compartidos
+├── pages         una por ruta; las cinco secciones salen de navigation.ts
+├── hooks         useAsyncResource: cargando, error o listo
+└── lib/api       el único módulo que habla HTTP, con el envoltorio de error
 ```
 
 `app` y `web` son los dos paquetes del espacio de trabajo pnpm, en la raíz del repositorio. Cada
@@ -88,6 +93,11 @@ puertas a las mismas reglas: si una regla acaba duplicada en ambas, está en el 
 `domain` no importa Drizzle, Fastify ni el MCP, y habla con la persistencia por los puertos de
 `domain/repositories.ts`; `db/repositories/` los implementa y `domain/testing/in-memory.ts` los
 resuelve en memoria para las pruebas.
+
+**El panel lo sirve la propia aplicación.** En Compose, `app` publica la API en `/api/v1` y el
+panel construido en `/`, en el mismo puerto; en desarrollo lo levanta Vite y el proxy reenvía
+`/api`. El cliente del panel pide siempre rutas relativas: el origen de la API no aparece en
+ningún módulo.
 
 **Los intentos son inmutables.** `attempts` guarda una copia del enunciado, de las opciones que se
 mostraron y de la versión de la pregunta. Nunca reconstruyas un intento histórico leyendo la

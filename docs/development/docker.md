@@ -20,7 +20,7 @@ de ahí, `docker compose up -d` levanta en segundos.
 | Servicio | Imagen | Qué hace |
 | --- | --- | --- |
 | `mysql` | `mysql:8.4` | Base de datos. Crea la base y el usuario de la aplicación en el primer arranque, con las variables del `.env`. Arranca con `--log-bin-trust-function-creators=1`, sin lo cual las migraciones no pueden crear los disparadores de las invariantes. |
-| `app` | construida desde `Dockerfile` | La aplicación: API HTTP con Fastify bajo `/api/v1`. El servidor MCP llega en SQST-0020. |
+| `app` | construida desde `Dockerfile` | La aplicación: API HTTP con Fastify bajo `/api/v1` y el panel web servido en `/`. El servidor MCP llega en SQST-0020. |
 
 `app` declara `depends_on: mysql: condition: service_healthy`, así que no arranca hasta que MySQL
 responde a su sonda. La sonda de MySQL es `mysqladmin ping` cada 10 s, con 60 s de margen inicial
@@ -30,7 +30,7 @@ para que la primera inicialización no cuente como fallo.
 
 | Publicado | Variable | Destino | Para qué |
 | --- | --- | --- | --- |
-| `3000` | `APP_HOST_PORT` → `APP_PORT` | `app` | API HTTP y, más adelante, `/mcp` |
+| `3000` | `APP_HOST_PORT` → `APP_PORT` | `app` | API HTTP, panel web y, más adelante, `/mcp` |
 | `3306` | `MYSQL_HOST_PORT` → `3306` | `mysql` | Migraciones e inspección desde la máquina anfitriona |
 
 `APP_PORT` y `MYSQL_PORT` son las direcciones **dentro** de la red de Compose; `APP_HOST_PORT` y
@@ -77,15 +77,33 @@ Los datos de MySQL viven en el volumen con nombre `sidequest_mysql-data`, no en 
 
 `Dockerfile` tiene tres etapas:
 
-1. **`deps`** — instala solo las dependencias de `@sidequest/app` con `pnpm install --frozen-lockfile`.
-   Copia únicamente los manifiestos, así que la instalación se reutiliza mientras no cambien.
-2. **`build`** — compila TypeScript a `app/dist`.
-3. **`runtime`** — parte de una imagen limpia, instala solo las dependencias de producción, copia
-   `app/dist` y ejecuta como el usuario `node`. No lleva código fuente ni herramientas de
-   desarrollo.
+1. **`deps`** — instala el espacio de trabajo entero con `pnpm install --frozen-lockfile`. Copia
+   únicamente los manifiestos, así que la instalación se reutiliza mientras no cambien.
+2. **`build`** — compila TypeScript a `app/dist` y empaqueta el panel en `web/dist`.
+3. **`runtime`** — parte de una imagen limpia, instala solo las dependencias de producción de
+   `@sidequest/app`, copia `app/dist` y `web/dist`, y ejecuta como el usuario `node`. No lleva
+   código fuente ni herramientas de desarrollo.
 
-El panel queda fuera de la imagen: se construye aparte con `pnpm build` y se servirá desde
-SQST-0009.
+El panel viaja ya empaquetado: son archivos estáticos, así que en la imagen final no hay ni una
+dependencia suya. Lo sirve el propio proceso de la aplicación en `/`; ver
+[panel.md](panel.md).
+
+## El panel
+
+Con el entorno levantado, el panel está en la raíz del puerto publicado:
+
+```bash
+xdg-open http://localhost:3000        # el panel
+curl -s localhost:3000/api/v1/health  # la API, en el mismo puerto
+```
+
+No hay que configurar nada más: el mismo proceso sirve las dos cosas y el panel pide la API por
+rutas relativas. Una dirección del panel que no existe como archivo —`/temas`, `/ajustes`—
+devuelve su `index.html` y la resuelve su enrutador; debajo de `/api/v1` y de `/mcp`, en cambio,
+una ruta que no existe sigue siendo un `404` con el envoltorio de error en JSON.
+
+Para iterar sobre el panel sin reconstruir la imagen, `pnpm dev` lo levanta con Vite en
+`WEB_PORT` y reenvía `/api` a la aplicación. Ver [panel.md](panel.md).
 
 ## Migraciones
 

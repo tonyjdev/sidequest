@@ -47,6 +47,7 @@ docker compose up -d --build  # aplicación en :3000 y MySQL en :3306
 docker compose ps             # ambos servicios deben figurar como (healthy)
 
 curl -s localhost:3000/api/v1/health   # 200 con MySQL arriba, 503 sin ella
+xdg-open http://localhost:3000         # el panel, servido por la misma aplicación
 
 pnpm install
 pnpm db:migrate               # crea el esquema; la aplicación no migra al arrancar
@@ -73,6 +74,9 @@ en el `.env`: son los puertos publicados hacia fuera y no afectan a cómo se con
 | [docs/brief-original.md](docs/brief-original.md) | Documento de arranque original, sin modificar |
 | [docs/development/docker.md](docs/development/docker.md) | Entorno local: servicios, puertos, variables y datos |
 | [docs/development/database.md](docs/development/database.md) | Esquema, migraciones, invariantes y sembrado |
+| [docs/development/dominio.md](docs/development/dominio.md) | Modelos, puertos de repositorio e invariantes |
+| [docs/development/api.md](docs/development/api.md) | Contrato HTTP de contenido, preguntas y etiquetas |
+| [docs/development/panel.md](docs/development/panel.md) | Panel web: armazón, rutas, tema y cliente de API |
 | [docs/development/worktrees.md](docs/development/worktrees.md) | Worktrees de tarea en paralelo |
 
 ## Tareas
