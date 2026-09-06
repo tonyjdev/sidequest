@@ -47,12 +47,15 @@ docker compose up -d --build  # aplicación en :3000 y MySQL en :3306
 docker compose ps             # ambos servicios deben figurar como (healthy)
 
 curl -s localhost:3000/api/v1/health   # 200 con MySQL arriba, 503 sin ella
+
+pnpm install
+pnpm db:migrate               # crea el esquema; la aplicación no migra al arrancar
+pnpm db:seed                  # opcional: contenido de ejemplo para desarrollar
 ```
 
 Para iterar sobre el código sin reconstruir la imagen:
 
 ```bash
-pnpm install
 pnpm dev                      # API en :3000 y panel en :5173
 pnpm check                    # lint + tipos + pruebas unitarias
 ```
@@ -69,6 +72,7 @@ en el `.env`: son los puertos publicados hacia fuera y no afectan a cómo se con
 | [docs/referencias.md](docs/referencias.md) | Referencias externas y documentación de apoyo |
 | [docs/brief-original.md](docs/brief-original.md) | Documento de arranque original, sin modificar |
 | [docs/development/docker.md](docs/development/docker.md) | Entorno local: servicios, puertos, variables y datos |
+| [docs/development/database.md](docs/development/database.md) | Esquema, migraciones, invariantes y sembrado |
 | [docs/development/worktrees.md](docs/development/worktrees.md) | Worktrees de tarea en paralelo |
 
 ## Tareas

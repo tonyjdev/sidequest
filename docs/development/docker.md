@@ -19,7 +19,7 @@ de ahí, `docker compose up -d` levanta en segundos.
 
 | Servicio | Imagen | Qué hace |
 | --- | --- | --- |
-| `mysql` | `mysql:8.4` | Base de datos. Crea la base y el usuario de la aplicación en el primer arranque, con las variables del `.env`. No hay ningún paso manual después. |
+| `mysql` | `mysql:8.4` | Base de datos. Crea la base y el usuario de la aplicación en el primer arranque, con las variables del `.env`. Arranca con `--log-bin-trust-function-creators=1`, sin lo cual las migraciones no pueden crear los disparadores de las invariantes. |
 | `app` | construida desde `Dockerfile` | La aplicación: API HTTP con Fastify bajo `/api/v1`. El servidor MCP llega en SQST-0020. |
 
 `app` declara `depends_on: mysql: condition: service_healthy`, así que no arranca hasta que MySQL
@@ -87,6 +87,20 @@ Los datos de MySQL viven en el volumen con nombre `sidequest_mysql-data`, no en 
 El panel queda fuera de la imagen: se construye aparte con `pnpm build` y se servirá desde
 SQST-0009.
 
+## Migraciones
+
+El esquema **no** se crea al levantar el contenedor: la aplicación no migra al arrancar. Después
+del primer `up`, con MySQL ya `healthy`:
+
+```bash
+pnpm db:migrate    # crea el esquema
+pnpm db:seed       # opcional: contenido de ejemplo para desarrollar
+```
+
+Se ejecutan desde la máquina anfitriona contra el puerto publicado, que es justo para lo que
+existe `MYSQL_HOST_PORT`. `DATABASE_URL` no vale para eso: apunta al servicio `mysql`, un nombre
+que solo resuelve dentro de la red de Compose. Ver [database.md](database.md).
+
 ## Sonda de salud
 
 `app` responde `GET /api/v1/health`, que es lo que prueba el healthcheck del contenedor:
@@ -110,7 +124,7 @@ Devuelve `200` con MySQL disponible y `503` sin ella, **con el mismo documento**
 quien monitoriza vea *qué* comprobación falló, y no un mensaje genérico.
 
 La comprobación es un `SELECT 1`: mide la conexión y no depende de que exista ninguna tabla, así
-que vale igual antes y después de las migraciones de SQST-0005.
+que vale igual con el esquema migrado y sin migrar.
 
 ## Comandos habituales
 
@@ -119,7 +133,7 @@ docker compose up -d --build      # levanta, reconstruyendo si el código cambi�
 docker compose ps                 # estado y salud de cada servicio
 docker compose logs -f app        # registro de la aplicación
 docker compose exec mysql \
-  mysql -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"
+  mysql --default-character-set=utf8mb4 -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" "$MYSQL_DATABASE"
 docker compose down               # para y borra los contenedores, conserva los datos
 docker compose down -v            # borra también el volumen
 ```

@@ -24,6 +24,12 @@ pnpm build
 
 bash tests/shell/run.sh       # suites de shell; obligatorio si tocas scripts/
 
+pnpm db:generate              # genera la migración con el cambio del esquema
+pnpm db:migrate               # aplica las pendientes; desde la anfitriona, no en el contenedor
+pnpm db:rollback              # revierte la última aplicada
+pnpm db:seed                  # contenido de ejemplo para desarrollar
+pnpm db:studio                # inspección del esquema
+
 cp .env.example .env          # obligatorio antes del primer `up`
 docker compose up -d --build  # levanta app + MySQL
 docker compose ps             # ambos servicios deben figurar como (healthy)
@@ -36,9 +42,6 @@ docker compose down -v        # borra también el volumen de datos
 Todavía no existen; los trae la tarea indicada:
 
 ```bash
-pnpm db:generate              # genera migraciones Drizzle del esquema  SQST-0005
-pnpm db:migrate               # aplica migraciones
-pnpm db:studio                # inspección del esquema
 pnpm test:e2e                 # Playwright sobre el panel               SQST-0022
 ```
 
@@ -58,7 +61,8 @@ Ese script es la única implementación de las transiciones de Git del ciclo. Ve
 
 El gestor de paquetes es `pnpm`. La base de datos es MySQL 8.4 en Docker, con volumen persistente.
 Los puertos, las variables y el ciclo de vida del volumen están en
-`docs/development/docker.md`.
+`docs/development/docker.md`; el esquema, las migraciones y el sembrado, en
+`docs/development/database.md`.
 
 ## Arquitectura
 

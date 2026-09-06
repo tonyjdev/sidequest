@@ -4,6 +4,10 @@ coverage/
 .worktrees/
 pnpm-lock.yaml
 
+# Migraciones y sus instantáneas: las escribe drizzle-kit con su propio formato,
+# y reformatearlas dejaría el repositorio sucio tras cada `pnpm db:generate`.
+app/drizzle/
+
 # La documentación está escrita a mano con tablas alineadas y ancho fijo; el
 # .editorconfig ya la gobierna.
 *.md

@@ -1,7 +1,8 @@
 # Sidequest — especificación funcional y técnica
 
 Estado: **confirmada**. Las diez decisiones de [decisiones.md](decisiones.md) se cerraron en la
-tarea SQST-0001 el 2026-09-06, así que SQST-0005 ya puede congelar el esquema de base de datos.
+tarea SQST-0001 el 2026-09-06 y el esquema de base de datos quedó congelado en SQST-0005; §3
+describe lo que hay en `app/src/db/schema.ts` y en `app/drizzle/`.
 
 ## 1. Objetivo
 
@@ -69,7 +70,7 @@ Las mismas columnas, más `topic_id` (FK, restrict on delete) y `slug` único **
 | `difficulty` | enum | `easy`, `medium`, `hard` |
 | `status` | enum | `draft`, `published`, `archived` |
 | `visible_options` | tinyint | nullable; `null` usa el valor global |
-| `version` | int | se incrementa en cada edición del contenido |
+| `version` | int | lo incrementa la propia base cuando cambia el contenido |
 | `content_hash` | char(64) | sha256 del enunciado normalizado, para detectar duplicados al importar |
 | `created_at` / `updated_at` | timestamp | |
 
@@ -77,6 +78,11 @@ Las mismas columnas, más `topic_id` (FK, restrict on delete) y `slug` único **
 importación, no una restricción de integridad.
 
 Solo las preguntas `published` entran en el sorteo.
+
+`version` la sube un disparador, no la capa que escribe: cada intento guarda la versión que se
+mostró y el número solo vale de algo si nadie puede dejar de subirlo. Cuentan como edición de
+contenido el enunciado, la explicación, el tipo, la dificultad y `visible_options`; publicar,
+archivar o mover la pregunta de subtema, no.
 
 ### 3.5 `question_options`
 
@@ -91,6 +97,15 @@ Solo las preguntas `published` entran en el sorteo.
 Invariantes: toda pregunta publicada tiene al menos dos opciones y al menos una correcta. Una
 pregunta `single` tiene exactamente una correcta.
 
+**Las impone la base de datos**, con disparadores: cruzan dos tablas, así que un `CHECK` no puede
+expresarlas, y dejarlas solo en el código haría que cualquier escritura por otro camino las
+saltara. Se comprueban al publicar o editar la pregunta y al insertar, modificar o borrar sus
+opciones; romperlas devuelve `SQLSTATE 45000` con el motivo.
+
+De ahí una consecuencia que alcanza a la API, al panel y a la importación: **una pregunta nunca se
+crea ya publicada**, porque en ese instante todavía no puede tener opciones. El camino es siempre
+borrador → opciones → publicar, dentro de una transacción.
+
 ### 3.6 `question_resources`
 
 | Columna | Tipo | Notas |
@@ -101,6 +116,7 @@ pregunta `single` tiene exactamente una correcta.
 | `url` | varchar(2048) | |
 | `label` | varchar(160) | nullable |
 | `storage_kind` | enum | `external` en v1; deja sitio a `upload` sin migrar |
+| `position` | int | orden en que se muestran los enlaces |
 
 La terminal no renderiza recursos: muestra sus enlaces.
 
@@ -123,6 +139,10 @@ criterio opcional de selección.
 
 Permite estadísticas por sesión, aplicar límites de frecuencia y persistir la pausa que solicita
 `sidequest_pause`.
+
+`(agent, external_ref)` es único: `POST /sessions` abre o **reutiliza** una sesión, y sin esa
+restricción dos llamadas con la misma referencia partirían los contadores en dos. MySQL admite
+varias filas con `external_ref` nulo, que son las sesiones anónimas.
 
 ### 3.9 `attempts`
 
@@ -148,9 +168,20 @@ siga siendo interpretable si la pregunta se edita o se archiva después.
 
 ### 3.10 `settings`
 
-Tabla clave/valor: **una fila por parámetro**, con clave, valor y tipo. Contiene el número de
-opciones visibles por defecto, los factores de ponderación, la ventana de enfriamiento, el TTL del
-`attempt_token` y la frecuencia máxima por sesión. Se lee y se escribe desde el panel.
+Tabla clave/valor: **una fila por parámetro**, con clave, valor y tipo. Se lee y se escribe desde
+el panel. Los valores iniciales viajan en la migración, no en el sembrado de desarrollo: sin ellos
+la selección ponderada no tiene con qué calcular.
+
+| Clave | Inicial | Qué gobierna |
+| --- | --- | --- |
+| `visible_options_default` | 4 | Opciones mostradas cuando la pregunta no lo sobrescribe |
+| `weight_new_boost` | 10 | Multiplicador de la pregunta nunca respondida |
+| `weight_maturity_days` | 30 | Periodo de maduración de `factor_antiguedad` |
+| `weight_failure` | 1.5 | Peso del histórico de fallo |
+| `weight_difficulty_easy` / `_medium` / `_hard` | 1 | Multiplicador por dificultad |
+| `cooldown_hours` | 24 | Ventana de enfriamiento |
+| `attempt_token_ttl_seconds` | 300 | Validez del `attempt_token` (§4.4) |
+| `session_max_questions` | 20 | Frecuencia máxima por sesión |
 
 ## 4. Selección de preguntas
 
@@ -352,5 +383,5 @@ La detección de duplicados usa `content_hash` dentro del mismo subtema.
 ## 10. Orden de construcción
 
 Las tareas del proyecto `SQST` están numeradas para ejecutarse en secuencia. Las decisiones de
-[decisiones.md](decisiones.md) están cerradas, así que SQST-0005 puede congelar el esquema. El
-formato JSON de importación (SQST-0018) no debe fijarse hasta que el esquema esté estable.
+[decisiones.md](decisiones.md) están cerradas y el esquema quedó congelado en SQST-0005, así que
+el formato JSON de importación (SQST-0018) ya se puede fijar sobre él.
