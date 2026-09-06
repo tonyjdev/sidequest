@@ -45,6 +45,8 @@ el código.
 cp .env.example .env          # ajusta las contraseñas y el secreto
 docker compose up -d --build  # aplicación en :3000 y MySQL en :3306
 docker compose ps             # ambos servicios deben figurar como (healthy)
+
+curl -s localhost:3000/api/v1/health   # 200 con MySQL arriba, 503 sin ella
 ```
 
 Para iterar sobre el código sin reconstruir la imagen:

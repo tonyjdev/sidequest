@@ -232,11 +232,23 @@ se mostraron, y el MCP no necesita regla propia. Nada se persiste hasta que se r
 
 ## 5. API HTTP
 
-Prefijo `/api/v1`. JSON en ambos sentidos. Errores con `{ "error": { "code", "message", "details" } }`.
+Prefijo `/api/v1`. JSON en ambos sentidos. Toda respuesta que no sea 2xx sale con el mismo
+envelope, `{ "error": { "code", "message", "details" } }`, y `details` es `null` cuando no hay nada
+que añadir. El mapa de códigos es cerrado: ampliarlo es una decisión de contrato.
+
+| Código | Estado | Cuándo |
+| --- | --- | --- |
+| `validation_failed` | 422 | El cuerpo, la ruta o la consulta no pasan su esquema. `details` lleva una entrada `{ field, message }` por campo |
+| `not_found` | 404 | La ruta o el recurso no existen |
+| `conflict` | 409 | Choca con una invariante: un `slug` duplicado, un estado incompatible |
+| `internal_error` | 500 | Fallo no previsto. El mensaje interno queda en el registro, nunca en la respuesta |
+
+La sonda de salud es la excepción: devuelve su propio documento con `200` y con `503`, porque
+quien monitoriza necesita ver qué comprobación falló.
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
-| GET | `/health` | Sonda de vida y versión |
+| GET | `/health` | Estado del proceso, versión y conectividad con la base de datos. `200` con MySQL disponible, `503` sin ella |
 | GET/POST/PATCH | `/subjects`, `/subjects/{id}` | Materias |
 | GET/POST/PATCH | `/topics`, `/topics/{id}` | Temas |
 | GET/POST/PATCH | `/subtopics`, `/subtopics/{id}` | Subtemas |
