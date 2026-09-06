@@ -8,6 +8,7 @@ import { applyMigrations } from '@app/db/migrator.js';
 import { createRepositories } from '@app/db/repositories/index.js';
 import { canConnect } from '@app/db/testing/mysql.js';
 import { recordAttempt } from '@app/domain/attempts-service.js';
+import { ConflictError } from '@app/domain/errors.js';
 import {
   changeSubjectStatus,
   changeSubtopicStatus,
@@ -21,8 +22,7 @@ import {
   createQuestion,
   createTag,
   findDuplicateQuestions,
-  replaceQuestionOptions,
-  setQuestionTags,
+  listQuestions,
   updateQuestion,
 } from '@app/domain/questions-service.js';
 import type { Repositories } from '@app/domain/repositories.js';
@@ -245,31 +245,43 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
       expect(await countRows('question_options')).toBe(0);
     });
 
-    it('reemplaza las opciones de una pregunta publicada', async () => {
+    it('reemplaza las opciones de una pregunta publicada sin dejarla en borrador', async () => {
       const { questionId } = await publishedQuestion();
 
-      const options = await replaceQuestionOptions(repos, questionId, [
-        { text: 'nueva correcta', isCorrect: true },
-        { text: 'nuevo distractor', isCorrect: false },
-        { text: 'otro distractor', isCorrect: false },
-      ]);
+      const updated = await updateQuestion(repos, questionId, {
+        options: [
+          { text: 'nueva correcta', isCorrect: true },
+          { text: 'nuevo distractor', isCorrect: false },
+          { text: 'otro distractor', isCorrect: false },
+        ],
+      });
 
-      expect(options).toHaveLength(3);
+      expect(updated.options).toHaveLength(3);
       expect(await statusOf('questions', questionId)).toBe('published');
     });
 
-    it('deja intactas las opciones cuando el reemplazo rompe la invariante', async () => {
+    it('deshace la edición entera cuando el lote rompe una invariante', async () => {
       const { questionId } = await publishedQuestion();
 
-      await expect(
-        replaceQuestionOptions(repos, questionId, [
-          { text: 'a', isCorrect: false },
-          { text: 'b', isCorrect: false },
-        ]),
-      ).rejects.toThrow(/al menos una opción correcta/);
+      // Se llama al puerto directamente, saltándose la comprobación del
+      // servicio: lo que se prueba es que la transacción se deshace entera y que
+      // el disparador que salta llega traducido, no como un error de MySQL.
+      const failure = await rejectionOf(
+        repos.questions.update(questionId, {
+          patch: { statement: 'Un enunciado que no llega a guardarse' },
+          options: [
+            { text: 'a', isCorrect: false },
+            { text: 'b', isCorrect: false },
+          ],
+        }),
+      );
+
+      expect(failure).toBeInstanceOf(ConflictError);
+      expect(messageChain(failure)).toMatch(/al menos una opción correcta/);
 
       const detail = await repos.questions.findById(questionId);
 
+      expect(detail?.question.statement).toBe('¿Cuál es la solución de 2x + 6 = 0?');
       expect(detail?.options.map((option) => option.text)).toEqual(['x = −3', 'x = 3']);
       expect(await statusOf('questions', questionId)).toBe('published');
     });
@@ -281,8 +293,17 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
         statement: 'Un enunciado completamente distinto',
       });
 
-      expect(updated.version).toBe(2);
-      expect(updated.contentHash).not.toBe(contentHash);
+      expect(updated.question.version).toBe(2);
+      expect(updated.question.contentHash).not.toBe(contentHash);
+    });
+
+    it('busca en el enunciado sin distinguir mayúsculas ni acentos', async () => {
+      const { questionId } = await publishedQuestion();
+
+      expect(
+        (await listQuestions(repos, { search: 'SOLUCION DE 2X' })).map((row) => row.id),
+      ).toEqual([questionId]);
+      expect(await listQuestions(repos, { search: 'trigonometría' })).toEqual([]);
     });
 
     it('no sube la versión al archivar', async () => {
@@ -310,9 +331,11 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
       const algebra = await createTag(repos, { slug: 'algebra', name: 'Álgebra' });
       const definiciones = await createTag(repos, { slug: 'definiciones', name: 'Definiciones' });
 
-      await setQuestionTags(repos, questionId, [algebra.id, definiciones.id]);
+      await updateQuestion(repos, questionId, { tagIds: [algebra.id, definiciones.id] });
 
-      expect(await setQuestionTags(repos, questionId, [definiciones.id])).toEqual([definiciones]);
+      expect((await updateQuestion(repos, questionId, { tagIds: [definiciones.id] })).tags).toEqual(
+        [definiciones],
+      );
       expect(await repos.questions.list({ tagIds: [algebra.id] })).toEqual([]);
       expect(
         (await repos.questions.list({ tagIds: [definiciones.id] })).map((row) => row.id),

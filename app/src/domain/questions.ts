@@ -1,4 +1,4 @@
-import { InvariantError } from '@app/domain/errors.js';
+import { ConflictError, InvariantError } from '@app/domain/errors.js';
 import type {
   ContentStatus,
   Difficulty,
@@ -172,6 +172,36 @@ export function assertResourceUrls(resources: readonly NewQuestionResource[]): v
         { field: `resources.${index}.url`, message: 'URL no válida' },
       ]);
     }
+  }
+}
+
+/**
+ * Las tres transiciones de la pregunta. A diferencia de la jerarquía de
+ * contenido, la pregunta **sí vuelve a borrador**: se retira para arreglarla sin
+ * romper el histórico, que sigue colgando de los intentos ya registrados.
+ * Archivada, en cambio, es terminal por la misma razón de siempre.
+ */
+export type QuestionTransition = ContentStatus;
+
+const TRANSITION_WORDS: Readonly<Record<QuestionTransition, string>> = {
+  published: 'publicada',
+  draft: 'en borrador',
+  archived: 'archivada',
+};
+
+export function assertQuestionStatusTransition(from: ContentStatus, to: QuestionTransition): void {
+  if (from === to) {
+    throw new ConflictError(`La pregunta ya está ${TRANSITION_WORDS[to]}`, { from, to });
+  }
+
+  if (from === 'archived') {
+    throw new ConflictError(
+      'Una pregunta archivada no se recupera: el histórico depende de que lo retirado siga retirado',
+      {
+        from,
+        to,
+      },
+    );
   }
 }
 

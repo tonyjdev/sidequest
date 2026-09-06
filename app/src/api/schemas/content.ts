@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { idFilter, statusFilter } from '@app/api/schemas/shared.js';
 import type { ContentNode, Subtopic, Topic } from '@app/domain/content.js';
 import type { SubtopicSummary } from '@app/domain/content-service.js';
 import { contentStatuses } from '@app/domain/types.js';
@@ -41,32 +42,9 @@ export const subtopicSummarySchema = subtopicSchema.extend({
   question_count: z.number().int().nonnegative(),
 });
 
-export const itemsOf = <T extends z.ZodType>(item: T) => z.object({ items: z.array(item) });
-
-/**
- * `?status=draft,published` y `?status=draft&status=published` significan lo
- * mismo: Fastify entrega una cadena o un array según cuántas veces aparezca el
- * parámetro, y quien escribe la URL a mano no tiene por qué saber cuál toca.
- */
-function commaSeparated<T extends z.ZodType>(item: T) {
-  return z.preprocess((value) => {
-    if (value === undefined) return undefined;
-
-    return (Array.isArray(value) ? value : [value])
-      .flatMap((entry) => String(entry).split(','))
-      .map((entry) => entry.trim())
-      .filter((entry) => entry !== '');
-  }, z.array(item).nonempty().optional());
-}
-
-const statusFilter = commaSeparated(z.enum(contentStatuses));
-const idFilter = commaSeparated(z.coerce.number().int().positive());
-
 export const subjectQuerySchema = z.object({ status: statusFilter });
 export const topicQuerySchema = z.object({ status: statusFilter, subject_id: idFilter });
 export const subtopicQuerySchema = z.object({ status: statusFilter, topic_id: idFilter });
-
-export const idParamsSchema = z.object({ id: z.coerce.number().int().positive() });
 
 /** El padre viaja en el cuerpo del alta: un tema sin materia no existe. */
 export const parentIdSchema = z.number().int().positive();

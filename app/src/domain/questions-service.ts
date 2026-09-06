@@ -6,18 +6,18 @@ import {
   assertOptionTexts,
   assertPublishableQuestion,
   assertQuestionStatement,
+  assertQuestionStatusTransition,
   assertResourceUrls,
   assertVisibleOptions,
   type NewQuestionOption,
   type NewQuestionResource,
   type Question,
   type QuestionDetail,
-  type QuestionOption,
   type QuestionPatch,
-  type QuestionResource,
+  type QuestionTransition,
   type Tag,
 } from '@app/domain/questions.js';
-import type { Repositories } from '@app/domain/repositories.js';
+import type { QuestionQuery, Repositories } from '@app/domain/repositories.js';
 import type { ContentStatus, Difficulty, QuestionType } from '@app/domain/types.js';
 
 /**
@@ -31,6 +31,13 @@ import type { ContentStatus, Difficulty, QuestionType } from '@app/domain/types.
  * corresponde.
  */
 
+/** El agregado entero, tal y como se edita: la pregunta y lo que cuelga de ella. */
+export interface QuestionUpdateInput extends QuestionPatch {
+  readonly options?: readonly NewQuestionOption[] | undefined;
+  readonly resources?: readonly NewQuestionResource[] | undefined;
+  readonly tagIds?: readonly number[] | undefined;
+}
+
 export interface QuestionInput {
   readonly subtopicId: number;
   readonly type: QuestionType;
@@ -43,6 +50,14 @@ export interface QuestionInput {
   readonly tagIds?: readonly number[] | undefined;
   /** Se crea en borrador salvo que se pida publicada, y entonces se exige que lo pueda estar. */
   readonly publish?: boolean | undefined;
+}
+
+export function listQuestions(repos: Repositories, query?: QuestionQuery): Promise<Question[]> {
+  return repos.questions.list(query);
+}
+
+export function listTags(repos: Repositories): Promise<Tag[]> {
+  return repos.tags.list();
 }
 
 export async function createQuestion(
@@ -81,62 +96,36 @@ export async function createQuestion(
   });
 }
 
+/**
+ * La edición del agregado. Las opciones, los recursos y las etiquetas que
+ * lleguen sustituyen enteras a las anteriores; las que no lleguen se quedan como
+ * estaban. Todo va en una sola llamada al puerto, y por tanto en una sola
+ * transacción: una edición que falle a mitad no deja opciones huérfanas.
+ */
 export async function updateQuestion(
   repos: Repositories,
   id: number,
-  patch: QuestionPatch,
-): Promise<Question> {
+  input: QuestionUpdateInput,
+): Promise<QuestionDetail> {
+  const { options, resources, tagIds, ...patch } = input;
   const detail = await requireQuestion(repos, id);
 
   if (patch.statement !== undefined) assertQuestionStatement(patch.statement);
   if (patch.visibleOptions !== undefined) assertVisibleOptions(patch.visibleOptions);
+  if (options !== undefined) assertOptionTexts(options);
+  if (resources !== undefined) assertResourceUrls(resources);
   if (patch.subtopicId !== undefined) await requireSubtopic(repos, patch.subtopicId);
+  if (tagIds !== undefined) await requireTags(repos, tagIds);
 
-  // Cambiar de `multiple` a `single` puede dejar publicada una pregunta con dos
-  // correctas: se comprueba contra las opciones que ya tiene.
+  // Se comprueba contra cómo va a quedar, no contra cómo está: cambiar a la vez
+  // el tipo y las opciones solo es válido si el resultado cumple las tres
+  // invariantes. Sobre un borrador no aplican, que es lo que permite arreglar
+  // una pregunta a medias.
   if (detail.question.status === 'published') {
-    assertPublishableQuestion(patch.type ?? detail.question.type, detail.options);
+    assertPublishableQuestion(patch.type ?? detail.question.type, options ?? detail.options);
   }
 
-  return repos.questions.update(id, patch);
-}
-
-export async function replaceQuestionOptions(
-  repos: Repositories,
-  id: number,
-  options: readonly NewQuestionOption[],
-): Promise<QuestionOption[]> {
-  const detail = await requireQuestion(repos, id);
-
-  assertOptionTexts(options);
-
-  if (detail.question.status === 'published') {
-    assertPublishableQuestion(detail.question.type, options);
-  }
-
-  return repos.questions.replaceOptions(id, options);
-}
-
-export async function replaceQuestionResources(
-  repos: Repositories,
-  id: number,
-  resources: readonly NewQuestionResource[],
-): Promise<QuestionResource[]> {
-  await requireQuestion(repos, id);
-  assertResourceUrls(resources);
-
-  return repos.questions.replaceResources(id, resources);
-}
-
-export async function setQuestionTags(
-  repos: Repositories,
-  id: number,
-  tagIds: readonly number[],
-): Promise<Tag[]> {
-  await requireQuestion(repos, id);
-  await requireTags(repos, tagIds);
-
-  return repos.questions.setTags(id, tagIds);
+  return repos.questions.update(id, { patch, options, resources, tagIds });
 }
 
 /**
@@ -147,9 +136,11 @@ export async function setQuestionTags(
 export async function changeQuestionStatus(
   repos: Repositories,
   id: number,
-  status: ContentStatus,
+  status: QuestionTransition,
 ): Promise<Question> {
   const detail = await requireQuestion(repos, id);
+
+  assertQuestionStatusTransition(detail.question.status, status);
 
   if (status === 'published') {
     assertPublishableQuestion(detail.question.type, detail.options);

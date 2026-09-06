@@ -1,15 +1,21 @@
-# API HTTP: la jerarquía de contenido
+# API HTTP: contenido, preguntas y etiquetas
 
-Materias, temas y subtemas viven bajo `/api/v1` y comparten superficie: son la misma cosa a
-distinta altura (docs/especificacion.md §3). Este documento fija su contrato; el envelope de error
-y el mapa de códigos están en §5 de la especificación, y las reglas que hay detrás, en
+Todo lo que se administra vive bajo `/api/v1`. Este documento fija su contrato; el envelope de
+error y el mapa de códigos están en §5 de la especificación, y las reglas que hay detrás, en
 [dominio.md](dominio.md).
 
-Las rutas son finas a propósito. Traducen JSON a una llamada de `domain/content-service.ts` y
-vuelven: **ni una comprobación vive en `api/`**, para que el servidor MCP entre por la misma puerta
-sin copiar ninguna.
+Las rutas son finas a propósito. Traducen JSON a una llamada de `domain/content-service.ts` o de
+`domain/questions-service.ts` y vuelven: **ni una comprobación vive en `api/`**, para que el
+servidor MCP entre por la misma puerta sin copiar ninguna.
 
-## Rutas
+Dos mitades, con reglas propias:
+
+- **La jerarquía de contenido** —materias, temas y subtemas— comparte superficie: es la misma cosa
+  a distinta altura (docs/especificacion.md §3).
+- **La pregunta es un agregado**: sus opciones, sus recursos y sus etiquetas se crean y se editan
+  con ella, en la misma llamada.
+
+## La jerarquía: rutas
 
 | Método | Ruta | Uso |
 | --- | --- | --- |
@@ -102,6 +108,96 @@ repetido:
 Hermanos son todos, incluidos los archivados: el panel carga la lista sin filtrar cuando entra en
 modo reordenación. `/subtopics/reorder` recibe `topic_id`; `/subjects/reorder`, solo `ids`.
 
+## Preguntas
+
+La pregunta es un agregado y se escribe como tal: **no hay `/questions/{id}/options`**. Una
+pregunta a medio editar —opciones nuevas con el enunciado viejo— no es un estado que deba llegar a
+existir, así que todo el cuerpo entra en una transacción o no entra nada.
+
+| Método | Ruta | Uso |
+| --- | --- | --- |
+| GET | `/questions` | Listado, con filtros. Devuelve la pregunta sin lo que cuelga de ella |
+| GET | `/questions/{id}` | La ficha: la pregunta con sus opciones, recursos y etiquetas |
+| POST | `/questions` | Alta del agregado. Responde `201` con la ficha |
+| PATCH | `/questions/{id}` | Edición del agregado. Responde con la ficha |
+| POST | `/questions/{id}/publish` · `/unpublish` · `/archive` | Transiciones. Responden con la pregunta |
+
+```json
+{
+  "subtopic_id": 3,
+  "type": "single",
+  "statement": "¿Cuál es la solución de 2x + 6 = 0?",
+  "explanation": "Se despeja la x.",
+  "difficulty": "medium",
+  "visible_options": null,
+  "status": "published",
+  "options": [
+    { "text": "x = −3", "is_correct": true },
+    { "text": "x = 3", "is_correct": false }
+  ],
+  "resources": [{ "kind": "page", "url": "https://es.wikipedia.org/wiki/Ecuación", "label": null }],
+  "tag_ids": [1]
+}
+```
+
+Cinco cosas que el cuerpo no dice y conviene saber:
+
+- **`status` solo se acepta en el alta**, y solo vale `draft` —el valor por defecto— o
+  `published`. A diferencia del contenido, la pregunta sí puede nacer publicada: el alta lleva sus
+  opciones, así que las tres invariantes ya se pueden comprobar. Debajo sigue siendo borrador →
+  opciones → publicar, porque los disparadores de la base no admiten otra cosa
+  ([database.md](database.md)).
+- **`visible_options` manda sobre el valor global** cuando no es nulo; nulo usa
+  `settings.visible_options_default` (docs/decisiones.md §7).
+- **`content_hash` y `version` no se escriben nunca desde fuera.** El hash se deriva del enunciado
+  y la versión la sube la base al cambiar el contenido —enunciado, explicación, tipo, dificultad o
+  `visible_options`—. Publicar, archivar o mover la pregunta de subtema no la suben.
+- **`storage_kind` no se acepta**: en esta versión los recursos son URL externas
+  (docs/decisiones.md §2). La respuesta lo devuelve, siempre `external`.
+- En el `PATCH`, **una colección que llega sustituye entera a la anterior** y una que no llega se
+  queda como estaba. `"resources": []` vacía los recursos; omitirlos los conserva.
+
+### Filtros del listado
+
+| Parámetro | Ejemplo |
+| --- | --- |
+| `status` | `?status=published` · `?status=draft,published` |
+| `subtopic_id` | `?subtopic_id=3,4` |
+| `difficulty` | `?difficulty=hard` |
+| `tag_id` | `?tag_id=1` |
+| `search` | `?search=ecuacion` |
+| `limit` · `offset` | `?limit=50&offset=100` |
+
+`search` busca una coincidencia parcial **en el enunciado**, sin distinguir mayúsculas ni acentos:
+la cotejación por defecto de MySQL 8.4 ya lo hace, y los repositorios en memoria lo imitan para que
+una prueba que pasa sin base de datos no mienta.
+
+### Transiciones de estado
+
+La pregunta tiene tres, una más que el contenido:
+
+| Desde | `publish` | `unpublish` | `archive` |
+| --- | --- | --- | --- |
+| `draft` | ✅ | 409 «ya está en borrador» | ✅ |
+| `published` | 409 «ya está publicada» | ✅ | ✅ |
+| `archived` | 409 | 409 | 409 «ya está archivada» |
+
+**La pregunta sí vuelve a borrador**, a diferencia de la materia o el tema: se retira para
+arreglarla sin romper el histórico, que sigue colgando de los intentos ya registrados. Archivada,
+en cambio, es terminal por la misma razón de siempre. Publicar exige las tres invariantes; que los
+tres antecesores estén publicados es criterio de candidatura al sorteo (§4.1), no condición para
+publicar la pregunta.
+
+## Etiquetas
+
+| Método | Ruta | Uso |
+| --- | --- | --- |
+| GET | `/tags` | Listado completo |
+| POST | `/tags` | Alta con `slug` y `name`. Responde `201` |
+| PATCH | `/tags/{id}` | Edición de `slug` y `name` |
+
+Las etiquetas no se archivan ni se borran: se desenganchan de la pregunta editándola.
+
 ## Códigos que devuelve cada rechazo
 
 | Situación | Código |
@@ -109,22 +205,28 @@ modo reordenación. `/subtopics/reorder` recibe `topic_id`; `/subjects/reorder`,
 | Falta un campo, sobra uno, o el tipo no encaja | `422` |
 | El slug no cumple el formato o el nombre está vacío | `422` |
 | El conjunto de la reordenación no cuadra | `422` |
-| El nodo o su padre no existen | `404` |
+| Una invariante de publicación no se cumple | `422` |
+| La URL de un recurso no es absoluta | `422` |
+| El nodo, la pregunta, la etiqueta o el padre no existen | `404` |
 | El slug ya está en uso dentro del mismo padre | `409` |
 | La transición choca con el estado actual | `409` |
 
-El reparto es deliberado: la **forma** del cuerpo la comprueba Zod en `api/schemas/content.ts` y
-las **reglas** —formato del slug, longitudes, cadena de publicación— el dominio. Repetir aquí el
-patrón del slug sería tener la misma regla en dos sitios, y el MCP acabaría teniéndola en un
-tercero.
+El reparto es deliberado: la **forma** del cuerpo la comprueban los esquemas Zod de
+`api/schemas/` y las **reglas** —formato del slug, longitudes, cadena de publicación, invariantes
+de la pregunta— el dominio. Repetir aquí el patrón del slug sería tener la misma regla en dos
+sitios, y el MCP acabaría teniéndola en un tercero.
+
+Hay un `409` que no sale del dominio: si un disparador de la base salta —`SQLSTATE 45000`— porque
+una escritura rompió una invariante sin pasar por el servicio, `db/repositories/shared.ts` lo
+traduce a conflicto en vez de dejar escapar un `500`. Su mensaje es el mismo que el del dominio.
 
 ## Verificación
 
 ```bash
-pnpm test content               # el contrato entero, con repositorios en memoria
+pnpm test content               # el contrato de la jerarquía, con repositorios en memoria
+pnpm test questions             # el contrato de preguntas y etiquetas
 pnpm test repositories.integration      # los adaptadores; se saltan sin MySQL delante
 ```
 
-Las pruebas de `app/src/api/routes/content.test.ts` levantan el servidor real con los
-repositorios en memoria: ejercen la ruta, el esquema y el manejador de errores de verdad, sin
-necesitar Docker.
+Las pruebas de `app/src/api/routes/*.test.ts` levantan el servidor real con los repositorios en
+memoria: ejercen la ruta, el esquema y el manejador de errores de verdad, sin necesitar Docker.

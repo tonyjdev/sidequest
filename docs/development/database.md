@@ -107,6 +107,11 @@ transacción, que es también el que sigue la importación.
 INSERT INTO questions (…, status) VALUES (…, 'published');
 ```
 
+Que un disparador salte significa que algo escribió sin pasar por el dominio, que comprueba lo
+mismo antes. Cuando ocurre, `withDatabaseInvariants` de `db/repositories/shared.ts` reconoce el
+`SQLSTATE 45000` y lo convierte en `ConflictError` —`409`, con el mismo mensaje— en lugar de dejar
+escapar un `500` con un error de MySQL dentro.
+
 ## Migraciones
 
 ```text

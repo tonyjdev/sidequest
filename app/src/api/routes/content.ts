@@ -2,8 +2,6 @@ import type { FastifyPluginAsyncZod } from 'fastify-type-provider-zod';
 
 import {
   createContentSchema,
-  idParamsSchema,
-  itemsOf,
   parentIdSchema,
   patchContentSchema,
   reorderSubjectsSchema,
@@ -21,6 +19,7 @@ import {
   topicQuerySchema,
   topicSchema,
 } from '@app/api/schemas/content.js';
+import { idParamsSchema, itemsOf } from '@app/api/schemas/shared.js';
 import {
   changeSubjectStatus,
   changeSubtopicStatus,

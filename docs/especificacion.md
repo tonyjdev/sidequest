@@ -286,6 +286,7 @@ quien monitoriza necesita ver qué comprobación falló.
 | GET/POST/PATCH | `/questions`, `/questions/{id}` | Preguntas, opciones y recursos |
 | GET/POST/PATCH | `/tags`, `/tags/{id}` | Etiquetas |
 | POST | `/subjects/{id}/publish`, `/topics/{id}/publish`, `/subtopics/{id}/publish` | Publicación. Exige el padre ya publicado y el propio nodo en borrador |
+| POST | `/questions/{id}/publish`, `/questions/{id}/unpublish` | Publicación de la pregunta y vuelta a borrador para arreglarla. Publicar exige sus tres invariantes, no la cadena de antecesores |
 | POST | `/subjects/{id}/archive`, `/topics/{id}/archive`, `/subtopics/{id}/archive`, `/questions/{id}/archive` | Archivado, nunca borrado físico. Arrastra a los descendientes |
 | POST | `/subjects/reorder`, `/topics/reorder`, `/subtopics/reorder` | Orden manual: todos los hermanos en el orden nuevo, `position` 1..n |
 | GET/PATCH | `/settings` | Parámetros globales: opciones visibles, ponderación, enfriamiento, frecuencia |
@@ -304,9 +305,10 @@ quien monitoriza necesita ver qué comprobación falló.
 `/quiz/next` no marca nada como consumido: el intento se registra al responder. Si la sesión
 abandona la pregunta, no queda rastro.
 
-El estado del contenido **no se edita con `PATCH`**: se mueve por las rutas de transición, y solo
-existen dos —`draft → published` y `cualquiera → archived`—. Ni se vuelve a borrador ni se
-desarchiva. El detalle del contrato de contenido está en
+El estado **no se edita con `PATCH`**: se mueve por las rutas de transición. En el contenido solo
+existen dos —`draft → published` y `cualquiera → archived`—: ni se vuelve a borrador ni se
+desarchiva. La pregunta añade `published → draft`, porque se retira para arreglarla sin romper el
+histórico; archivada es terminal también para ella. El detalle del contrato está en
 [development/api.md](development/api.md).
 
 ## 6. Servidor MCP

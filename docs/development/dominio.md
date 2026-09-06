@@ -11,7 +11,7 @@ adaptadores, está en el sitio equivocado.
 | `types.ts` | El vocabulario cerrado: estados, tipos de pregunta, dificultades, tipos de recurso |
 | `errors.ts` | `DomainError` y sus tres razones: `invalid`, `not_found`, `conflict` |
 | `content.ts` | Materia, tema y subtema: validación del slug, cadena de publicación y transiciones |
-| `questions.ts` | Pregunta, opciones y recursos, con las tres invariantes de publicación |
+| `questions.ts` | Pregunta, opciones y recursos: las tres invariantes de publicación y sus transiciones |
 | `attempts.ts` | El intento y su invariante: nunca se presenta sin una correcta entre las mostradas |
 | `sessions.ts` | La sesión de trabajo de un agente |
 | `settings.ts` | Los diez parámetros ajustables, con sus valores por defecto |
@@ -31,9 +31,13 @@ intentos y parámetros—. Hay dos implementaciones:
 - `app/src/domain/testing/in-memory.ts` los resuelve con arrays. No se empaqueta en `dist`.
 
 Los puertos guardan y leen; no deciden. Lo único que sí les pertenece es la atomicidad: cuando una
-operación exige varias escrituras —crear una pregunta con sus opciones, archivar un árbol,
+operación exige varias escrituras —crear o editar una pregunta con sus opciones, archivar un árbol,
 repartir las posiciones de un conjunto de hermanos— el puerto la ofrece como una sola y cada
 implementación la hace indivisible con lo que tenga.
+
+De ahí que la pregunta tenga un solo escritor, `questions.update`, y no uno por colección: una
+pregunta a medio editar —opciones nuevas con el enunciado viejo— no es un estado que deba llegar a
+existir. Lo que llega sustituye entero; lo que no llega se queda como estaba.
 
 ```ts
 import { createInMemoryRepositories } from '@app/domain/testing/in-memory.js';
@@ -44,10 +48,14 @@ const repos = createInMemoryRepositories();
 await createQuestion(repos, { subtopicId, type: 'single', statement: '…', options: [...] });
 ```
 
-## Las transiciones de estado son dos
+## Las transiciones de estado son dos, y tres en la pregunta
 
 `draft → published` y `cualquiera → archived`. No hay más: `assertStatusTransition` rechaza con
 `ConflictError` republicar lo archivado, volver a borrador y repetir la transición que ya se hizo.
+
+La pregunta añade una tercera, `published → draft`, con `assertQuestionStatusTransition`: se
+retira para arreglarla sin romper el histórico, que sigue colgando de los intentos ya registrados.
+Archivada sigue siendo terminal también aquí.
 
 Está en `content.ts` y no en los adaptadores por la razón de siempre: la API lo llama desde
 `POST /{nivel}/{id}/publish` y el MCP lo llamará desde donde le toque, sin que ninguno tenga que
@@ -75,9 +83,13 @@ vocabulario que repite `db/schema.ts` y los valores iniciales que siembra la mig
 
 De los disparadores sale una consecuencia que alcanza a los adaptadores: **una pregunta no se crea
 publicada**, porque en ese instante todavía no tiene opciones. `create` recorre borrador → opciones →
-publicar dentro de una transacción, y `replaceOptions` devuelve la pregunta a borrador mientras
-cambia sus opciones, porque los disparadores las cuentan una a una y vaciarlas con la pregunta
-publicada fallaría al borrar la penúltima.
+publicar dentro de una transacción, y `update` aparca la pregunta en borrador mientras cambia sus
+opciones, porque los disparadores las cuentan una a una y vaciarlas con la pregunta publicada
+fallaría al borrar la penúltima.
+
+Que un disparador salte significa que algo escribió sin pasar por el servicio. Cuando ocurre,
+`withDatabaseInvariants` de `db/repositories/shared.ts` reconoce el `SQLSTATE 45000` y lo convierte
+en `ConflictError` con el mismo mensaje, en vez de dejar escapar un error de MySQL sin traducir.
 
 ## Los errores no conocen HTTP
 
@@ -104,7 +116,8 @@ número absurdo no puede dejar la aplicación sin arrancar.
 
 ```bash
 pnpm test src/domain             # el dominio entero, sin MySQL
-pnpm test content                # el dominio y su contrato HTTP
+pnpm test content                # la jerarquía y su contrato HTTP
+pnpm test questions              # las preguntas y su contrato HTTP
 pnpm test repositories.integration      # los adaptadores Drizzle; se saltan sin MySQL delante
 ```
 
