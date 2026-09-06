@@ -38,11 +38,14 @@ Las preguntas son independientes del desarrollo en curso y no alteran su context
 
 ## Arranque
 
-> Pendiente: el entorno ejecutable se construye en las tareas SQST-0002 a SQST-0004.
+Requisitos: Node 24 y pnpm 11. El entorno en Docker llega en SQST-0003; por ahora el proyecto se
+ejecuta directamente con Node.
 
 ```bash
 cp .env.example .env
-docker compose up -d
+pnpm install
+pnpm dev                      # API en :3000 y panel en :5173
+pnpm check                    # lint + tipos + pruebas unitarias
 ```
 
 ## Documentación

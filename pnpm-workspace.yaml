@@ -1,0 +1,16 @@
+packages:
+  - app
+  - web
+
+# Versiones compartidas por los dos paquetes. Se declaran una vez aquí y se
+# referencian como `catalog:` para que no puedan divergir entre paquetes.
+catalog:
+  '@types/node': ^24.9.2
+  typescript: ~5.9.3
+  vite: ^8.2.2
+  vitest: ^5.0.0
+
+# esbuild, dependencia de Vite, compila su binario durante la instalación. Sin
+# esta autorización pnpm la omite y el panel no puede construirse en un clon limpio.
+allowBuilds:
+  esbuild: true
