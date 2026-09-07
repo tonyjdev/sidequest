@@ -19,6 +19,7 @@ import {
 import { subjectRoutes, subtopicRoutes, topicRoutes } from '@app/api/routes/content.js';
 import { healthRoutes } from '@app/api/routes/health.js';
 import { questionRoutes, tagRoutes } from '@app/api/routes/questions.js';
+import { settingsRoutes } from '@app/api/routes/settings.js';
 import type { AppConfig } from '@app/config/env.js';
 import type { DatabaseCheck } from '@app/db/health-check.js';
 import { DomainError, type DomainErrorKind } from '@app/domain/errors.js';
@@ -113,6 +114,7 @@ export async function buildServer({
   await app.register(subtopicRoutes({ repositories }), { prefix: API_PREFIX });
   await app.register(questionRoutes({ repositories }), { prefix: API_PREFIX });
   await app.register(tagRoutes({ repositories }), { prefix: API_PREFIX });
+  await app.register(settingsRoutes({ repositories }), { prefix: API_PREFIX });
 
   return app;
 }

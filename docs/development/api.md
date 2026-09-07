@@ -1,4 +1,4 @@
-# API HTTP: contenido, preguntas y etiquetas
+# API HTTP: contenido, preguntas, etiquetas y parámetros
 
 Todo lo que se administra vive bajo `/api/v1`. Este documento fija su contrato; el envelope de
 error y el mapa de códigos están en §5 de la especificación, y las reglas que hay detrás, en
@@ -188,6 +188,25 @@ en cambio, es terminal por la misma razón de siempre. Publicar exige las tres i
 tres antecesores estén publicados es criterio de candidatura al sorteo (§4.1), no condición para
 publicar la pregunta.
 
+## Parámetros globales
+
+```http
+GET /api/v1/settings
+```
+
+Devuelve los diez parámetros de docs/especificacion.md §3.10 con su clave de la base, que es
+también la de la API: `visible_options_default`, `weight_new_boost`, `weight_maturity_days`,
+`weight_failure`, `weight_difficulty_easy` · `_medium` · `_hard`, `cooldown_hours`,
+`attempt_token_ttl_seconds` y `session_max_questions`. Todos son números.
+
+La lectura es tolerante: una fila que falte o que no se pueda interpretar deja su valor por
+defecto en su sitio (`domain/settings.ts`). Que la configuración fuera ilegible una vez no puede
+dejar sin arrancar a lo que la usa.
+
+**El `PATCH` todavía no existe**: lo trae SQST-0025, con la pantalla que los edita. El `GET` se
+adelantó en SQST-0011 porque el editor de preguntas necesita enseñar cuántas opciones se mostrarán
+cuando la pregunta no lo dice.
+
 ## Etiquetas
 
 | Método | Ruta | Uso |
@@ -225,6 +244,7 @@ traduce a conflicto en vez de dejar escapar un `500`. Su mensaje es el mismo que
 ```bash
 pnpm test content               # el contrato de la jerarquía, con repositorios en memoria
 pnpm test questions             # el contrato de preguntas y etiquetas
+pnpm test settings              # los parámetros globales y sus claves
 pnpm test repositories.integration      # los adaptadores; se saltan sin MySQL delante
 ```
 

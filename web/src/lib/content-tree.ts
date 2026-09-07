@@ -89,3 +89,36 @@ function groupBy<T>(rows: readonly T[], keyOf: (row: T) => number): Map<number, 
 
   return groups;
 }
+
+/** El subtema con sus dos ancestros y su nombre completo, para nombrarlo en una línea. */
+export interface SubtopicPath {
+  readonly subtopic: SubtopicNode;
+  readonly subject: ContentNode;
+  readonly topic: TopicNode;
+  /** «Matemáticas › Álgebra › Ecuaciones». */
+  readonly label: string;
+}
+
+/**
+ * La pregunta cuelga de un subtema y el resto se deriva de él, así que en el
+ * listado y en el editor un subtema se nombra siempre por su ruta entera: hay
+ * «Ecuaciones» en más de un tema y el nombre suelto no distingue cuál es.
+ *
+ * Un subtema cuyo tema o cuya materia no estén en el catálogo se queda fuera,
+ * por lo mismo que en el árbol: no hay ruta que escribir.
+ */
+export function buildSubtopicPaths(catalog: ContentCatalog): readonly SubtopicPath[] {
+  const subjects = new Map(catalog.subjects.map((subject) => [subject.id, subject]));
+  const topics = new Map(catalog.topics.map((topic) => [topic.id, topic]));
+
+  return catalog.subtopics.flatMap((subtopic) => {
+    const topic = topics.get(subtopic.topic_id);
+    const subject = topic ? subjects.get(topic.subject_id) : undefined;
+
+    if (topic === undefined || subject === undefined) return [];
+
+    return [
+      { subtopic, subject, topic, label: `${subject.name} › ${topic.name} › ${subtopic.name}` },
+    ];
+  });
+}

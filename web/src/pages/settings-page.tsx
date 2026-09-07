@@ -13,8 +13,8 @@ export function SettingsPage() {
       <PendingSection
         title="Parámetros globales"
         description="Los valores que gobiernan el sorteo se ajustan aquí, sin desplegar."
-        detail="La edición de `settings` llega con la tarea de estadísticas y ajustes del panel."
-        task="SQST-0016"
+        detail="La API ya los sirve en GET /settings; la pantalla que los edita llega con su tarea."
+        task="SQST-0025"
         icon={Settings}
       />
     </>
