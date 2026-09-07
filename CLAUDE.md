@@ -64,8 +64,8 @@ Los puertos, las variables y el ciclo de vida del volumen están en
 `docs/development/docker.md`; el esquema, las migraciones y el sembrado, en
 `docs/development/database.md`; los modelos, los puertos de repositorio y las invariantes, en
 `docs/development/dominio.md`; el contrato HTTP de contenido, preguntas y etiquetas, en
-`docs/development/api.md`; el armazón del panel, sus rutas y su cliente de API, en
-`docs/development/panel.md`.
+`docs/development/api.md`; el armazón del panel, sus rutas, su cliente de API y la pantalla de
+contenido, en `docs/development/panel.md`.
 
 ## Arquitectura
 
@@ -78,7 +78,7 @@ app/src           paquete @sidequest/app
 ├── api           Fastify, /api/v1, y el panel construido servido en /
 └── mcp           servidor MCP sobre HTTP streamable, /mcp
 web/src           paquete @sidequest/web: panel React + Vite + shadcn/ui
-├── components    armazón, primitivas de shadcn/ui y los estados compartidos
+├── components    armazón, primitivas de shadcn/ui, estados compartidos y el árbol de contenido
 ├── pages         una por ruta; las cinco secciones salen de navigation.ts
 ├── hooks         useAsyncResource: cargando, error o listo
 └── lib/api       el único módulo que habla HTTP, con el envoltorio de error
