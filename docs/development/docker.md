@@ -105,6 +105,47 @@ una ruta que no existe sigue siendo un `404` con el envoltorio de error en JSON.
 Para iterar sobre el panel sin reconstruir la imagen, `pnpm dev` lo levanta con Vite en
 `WEB_PORT` y reenvía `/api` a la aplicación. Ver [panel.md](panel.md).
 
+### Un dominio local
+
+El puerto publicado basta, pero si prefieres una dirección con nombre —`sidequest.test`, como el
+resto de proyectos de la máquina— la sirve un `server` de nginx en la anfitriona que hace de proxy
+al contenedor. No es un proyecto PHP: aquí no hay raíz de archivos, solo `proxy_pass`.
+
+```nginx
+# /etc/nginx/sites-available/sidequest.test
+server {
+    listen 80;
+    server_name sidequest.test;
+
+    client_max_body_size 32m;   # los lotes de importación no caben en 1 MB
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;   # APP_HOST_PORT
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # El MCP responde en flujo continuo: sin esto, nginx acumularía la
+        # respuesta y la cortaría al minuto.
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 1h;
+    }
+}
+```
+
+`$connection_upgrade` sale de un `map` en el contexto `http`
+—`/etc/nginx/conf.d/upgrade-map.conf`—, y `sidequest.test` necesita su línea en `/etc/hosts`
+apuntando a `127.0.0.1`. Con eso, `APP_PUBLIC_URL=http://sidequest.test` en el `.env`.
+
+El proxy llega al **contenedor**, así que sirve el panel construido: un cambio en `web/` no se ve
+hasta reconstruir la imagen. Mientras iteras, `pnpm dev` en `localhost:5173` sigue siendo el
+camino corto.
+
 ## Migraciones
 
 El esquema **no** se crea al levantar el contenedor: la aplicación no migra al arrancar. Después
