@@ -1,13 +1,17 @@
-import { and, asc, count, eq, inArray, like, type SQL } from 'drizzle-orm';
+import { and, asc, count, eq, gt, inArray, like, max, notExists, sql, type SQL } from 'drizzle-orm';
 
 import type { Database } from '@app/db/client.js';
 import { requireRow, withDatabaseInvariants, type Executor } from '@app/db/repositories/shared.js';
 import {
+  attempts,
   questionOptions,
   questionResources,
   questionTag,
   questions,
+  subjects,
+  subtopics,
   tags,
+  topics,
 } from '@app/db/schema.js';
 import { contentHashOf } from '@app/domain/content-hash.js';
 import type {
@@ -21,6 +25,8 @@ import type {
   Tag,
 } from '@app/domain/questions.js';
 import type {
+  CandidatePage,
+  CandidateQuery,
   NewQuestionInput,
   QuestionQuery,
   QuestionRepository,
@@ -109,6 +115,10 @@ export function createQuestionRepository(db: Database): QuestionRepository {
       return new Map(rows.map((row) => [row.subtopicId, row.total]));
     },
 
+    listSelectionCandidates(query: CandidateQuery): Promise<CandidatePage> {
+      return loadCandidates(db, query);
+    },
+
     /**
      * Borrador → opciones → publicar, dentro de una transacción. No es una
      * preferencia: los disparadores impiden crear una pregunta ya publicada,
@@ -190,6 +200,95 @@ export function createQuestionRepository(db: Database): QuestionRepository {
 
       return requireRow(await findQuestion(db, id), NOT_FOUND, { questionId: id });
     },
+  };
+}
+
+/**
+ * El conjunto de candidatas de §4.1, en una consulta: la cadena de tres
+ * eslabones publicada, el filtro recibido y el histórico de intentos agregado
+ * por pregunta.
+ *
+ * Lo que se trae es el mínimo para ponderar. El enfriamiento se resuelve con un
+ * `not exists` sobre `attempts`, que sigue el índice `(question_id, answered_at)`
+ * y descarta antes de agrupar; la paginación por id deja que MySQL recorra la
+ * clave primaria y pare en cuanto llena la página.
+ */
+async function loadCandidates(db: Database, query: CandidateQuery): Promise<CandidatePage> {
+  const { subjectIds, topicIds, subtopicIds, difficulties, tagIds } = query.filter;
+
+  // Una lista vacía no acota, selecciona nada: pedir «de estas cero materias»
+  // no es lo mismo que no nombrar ninguna.
+  if (
+    subjectIds?.length === 0 ||
+    topicIds?.length === 0 ||
+    subtopicIds?.length === 0 ||
+    difficulties?.length === 0 ||
+    tagIds?.length === 0
+  ) {
+    return { candidates: [], nextCursor: null };
+  }
+
+  const taggedQuestions =
+    tagIds === undefined
+      ? undefined
+      : db
+          .select({ questionId: questionTag.questionId })
+          .from(questionTag)
+          .where(inArray(questionTag.tagId, [...tagIds]));
+
+  const outsideCooldown =
+    query.cooldownSince === null
+      ? undefined
+      : notExists(
+          db
+            .select({ questionId: attempts.questionId })
+            .from(attempts)
+            .where(
+              and(
+                eq(attempts.questionId, questions.id),
+                gt(attempts.answeredAt, query.cooldownSince),
+              ),
+            ),
+        );
+
+  const rows = await db
+    .select({
+      questionId: questions.id,
+      subtopicId: questions.subtopicId,
+      difficulty: questions.difficulty,
+      // `count(attempts.id)` y no `count(*)`: con el `left join`, una pregunta
+      // sin intentos trae una fila de nulos y tiene que contar cero.
+      attemptCount: count(attempts.id),
+      correctCount: sql<number>`coalesce(sum(${attempts.isCorrect}), 0)`.mapWith(Number),
+      lastAnsweredAt: max(attempts.answeredAt),
+    })
+    .from(questions)
+    .innerJoin(subtopics, eq(subtopics.id, questions.subtopicId))
+    .innerJoin(topics, eq(topics.id, subtopics.topicId))
+    .innerJoin(subjects, eq(subjects.id, topics.subjectId))
+    .leftJoin(attempts, eq(attempts.questionId, questions.id))
+    .where(
+      and(
+        eq(questions.status, 'published'),
+        eq(subtopics.status, 'published'),
+        eq(topics.status, 'published'),
+        eq(subjects.status, 'published'),
+        subjectIds === undefined ? undefined : inArray(topics.subjectId, [...subjectIds]),
+        topicIds === undefined ? undefined : inArray(subtopics.topicId, [...topicIds]),
+        subtopicIds === undefined ? undefined : inArray(questions.subtopicId, [...subtopicIds]),
+        difficulties === undefined ? undefined : inArray(questions.difficulty, [...difficulties]),
+        taggedQuestions === undefined ? undefined : inArray(questions.id, taggedQuestions),
+        query.afterId === undefined ? undefined : gt(questions.id, query.afterId),
+        outsideCooldown,
+      ),
+    )
+    .groupBy(questions.id, questions.subtopicId, questions.difficulty)
+    .orderBy(asc(questions.id))
+    .limit(query.limit);
+
+  return {
+    candidates: rows,
+    nextCursor: rows.length < query.limit ? null : (rows.at(-1)?.questionId ?? null),
   };
 }
 

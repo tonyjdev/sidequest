@@ -25,9 +25,10 @@ import {
   listQuestions,
   updateQuestion,
 } from '@app/domain/questions-service.js';
-import type { Repositories } from '@app/domain/repositories.js';
+import type { CandidatePage, CandidateQuery, Repositories } from '@app/domain/repositories.js';
 import { DEFAULT_SETTINGS, settingsToRows } from '@app/domain/settings.js';
 import { readSettings, updateSettings } from '@app/domain/settings-service.js';
+import type { Difficulty } from '@app/domain/types.js';
 
 /**
  * Los adaptadores Drizzle contra MySQL de verdad.
@@ -573,6 +574,149 @@ describe.skipIf(!available)('repositorios sobre MySQL', () => {
     const rows = await select<{ total: number }>(`select count(*) as total from \`${table}\``);
 
     return Number(rows[0]?.total ?? 0);
+  }
+
+  describe('candidatas al sorteo', () => {
+    it('solo entran las publicadas con toda su cadena publicada', async () => {
+      const { subtopicId } = await publishedPath();
+      const publicada = await question(subtopicId, 'Publicada');
+
+      await question(subtopicId, 'En borrador', { publish: false });
+
+      const abierta = await candidates({});
+
+      expect(abierta.candidates.map((row) => row.questionId)).toEqual([publicada]);
+
+      await changeSubtopicStatus(repos, subtopicId, 'archived');
+
+      await expect(candidates({})).resolves.toEqual({ candidates: [], nextCursor: null });
+    });
+
+    it('agrega el histórico de intentos de cada pregunta', async () => {
+      const { subtopicId } = await publishedPath();
+      const questionId = await question(subtopicId, 'Con histórico');
+
+      await question(subtopicId, 'Sin responder');
+      await answer(questionId, true);
+      await answer(questionId, false);
+      await answer(questionId, true);
+
+      const { candidates: rows } = await candidates({});
+
+      expect(rows[0]).toMatchObject({ questionId, attemptCount: 3, correctCount: 2 });
+      expect(rows[0]?.lastAnsweredAt).toBeInstanceOf(Date);
+      expect(rows[1]).toMatchObject({ attemptCount: 0, correctCount: 0, lastAnsweredAt: null });
+    });
+
+    it('el enfriamiento deja fuera lo respondido después del corte', async () => {
+      const { subtopicId } = await publishedPath();
+      const questionId = await question(subtopicId, 'Recién respondida');
+
+      await answer(questionId, true);
+
+      const enfriando = await candidates({ cooldownSince: new Date(Date.now() - 60_000) });
+      const madura = await candidates({ cooldownSince: new Date(Date.now() + 60_000) });
+
+      expect(enfriando.candidates).toEqual([]);
+      expect(madura.candidates.map((row) => row.questionId)).toEqual([questionId]);
+    });
+
+    it('filtra por dificultad y por etiqueta', async () => {
+      const { subjectId, subtopicId } = await publishedPath();
+      const tag = await createTag(repos, { slug: 'repaso', name: 'Repaso' });
+
+      const facil = await question(subtopicId, 'Fácil y etiquetada', {
+        difficulty: 'easy',
+        tagIds: [tag.id],
+      });
+      const dificil = await question(subtopicId, 'Difícil y sin etiqueta', { difficulty: 'hard' });
+
+      const porDificultad = await candidates({ filter: { difficulties: ['hard'] } });
+      const porEtiqueta = await candidates({ filter: { tagIds: [tag.id] } });
+      const porMateria = await candidates({ filter: { subjectIds: [subjectId] } });
+
+      expect(porDificultad.candidates.map((row) => row.questionId)).toEqual([dificil]);
+      expect(porEtiqueta.candidates.map((row) => row.questionId)).toEqual([facil]);
+      expect(porMateria.candidates.map((row) => row.questionId)).toEqual([facil, dificil]);
+    });
+
+    it('pagina por id y avisa de que puede haber más', async () => {
+      const { subtopicId } = await publishedPath();
+      const ids = [
+        await question(subtopicId, 'Primera'),
+        await question(subtopicId, 'Segunda'),
+        await question(subtopicId, 'Tercera'),
+      ];
+
+      const first = await candidates({ limit: 2 });
+      const second = await candidates({ limit: 2, afterId: first.nextCursor ?? undefined });
+
+      expect(first.candidates.map((row) => row.questionId)).toEqual(ids.slice(0, 2));
+      expect(first.nextCursor).toBe(ids[1]);
+      expect(second.candidates.map((row) => row.questionId)).toEqual(ids.slice(2));
+      expect(second.nextCursor).toBeNull();
+    });
+
+    it('una lista vacía en el filtro no selecciona nada', async () => {
+      const { subtopicId } = await publishedPath();
+
+      await question(subtopicId, 'Publicada');
+
+      await expect(candidates({ filter: { subjectIds: [] } })).resolves.toEqual({
+        candidates: [],
+        nextCursor: null,
+      });
+    });
+  });
+
+  /** Los valores que casi nunca cambian de una consulta de candidatas a otra. */
+  function candidates(query: Partial<CandidateQuery>): Promise<CandidatePage> {
+    return repos.questions.listSelectionCandidates({
+      filter: {},
+      cooldownSince: null,
+      limit: 50,
+      ...query,
+    });
+  }
+
+  async function question(
+    subtopicId: number,
+    statement: string,
+    extra: { difficulty?: Difficulty; tagIds?: readonly number[]; publish?: boolean } = {},
+  ): Promise<number> {
+    const detail = await createQuestion(repos, {
+      subtopicId,
+      type: 'single',
+      statement,
+      options: [
+        { text: 'Correcta', isCorrect: true },
+        { text: 'Incorrecta', isCorrect: false },
+      ],
+      publish: extra.publish ?? true,
+      ...extra,
+    });
+
+    return detail.question.id;
+  }
+
+  async function answer(questionId: number, isCorrect: boolean): Promise<void> {
+    await recordAttempt(repos, {
+      questionId,
+      sessionId: null,
+      questionVersion: 1,
+      subjectName: 'Matemáticas',
+      topicName: 'Álgebra',
+      subtopicName: 'Ecuaciones',
+      questionStatement: 'Enunciado tal y como se mostró',
+      questionType: 'single',
+      difficulty: 'medium',
+      presentedOptions: [
+        { optionId: 1, text: 'Correcta', isCorrect: true },
+        { optionId: 2, text: 'Incorrecta', isCorrect: false },
+      ],
+      selectedOptionIds: isCorrect ? [1] : [2],
+      isCorrect,
+    });
   }
 
   async function publishedPath(): Promise<{

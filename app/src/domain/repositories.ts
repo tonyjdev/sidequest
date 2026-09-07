@@ -17,6 +17,7 @@ import type {
   QuestionPatch,
   Tag,
 } from '@app/domain/questions.js';
+import type { QuestionCandidate, SelectionFilter } from '@app/domain/selection.js';
 import type { Session, SessionKey, SessionPause } from '@app/domain/sessions.js';
 import type { SettingRow, SidequestSettings } from '@app/domain/settings.js';
 import type { ContentStatus, Difficulty } from '@app/domain/types.js';
@@ -93,6 +94,26 @@ export interface QuestionQuery {
 }
 
 /**
+ * Una página del conjunto de candidatas al sorteo (docs/especificacion.md §4.1).
+ * El motor la recorre con `afterId`, así que el catálogo nunca está entero en
+ * memoria por muchas preguntas que tenga.
+ */
+export interface CandidateQuery {
+  readonly filter: SelectionFilter;
+  /** Deja fuera lo respondido después de esta marca. `null` recorre sin enfriamiento. */
+  readonly cooldownSince: Date | null;
+  /** Solo ids mayores que este; ausente, desde el principio. */
+  readonly afterId?: number | undefined;
+  readonly limit: number;
+}
+
+export interface CandidatePage {
+  readonly candidates: readonly QuestionCandidate[];
+  /** El último id de la página cuando puede haber más; `null` cuando no. */
+  readonly nextCursor: number | null;
+}
+
+/**
  * Lo que hace falta para crear una pregunta completa. Se pide el estado final:
  * la base impide crear una pregunta ya publicada —en ese instante todavía no
  * tiene opciones—, así que el camino borrador → opciones → publicar lo recorre
@@ -132,6 +153,15 @@ export interface QuestionRepository {
    * aparecen en el mapa.
    */
   countBySubtopic(subtopicIds: readonly number[]): Promise<ReadonlyMap<number, number>>;
+  /**
+   * Una página de candidatas al sorteo, ordenada por id: publicadas, con su
+   * cadena de contenido publicada, dentro del filtro y fuera del enfriamiento.
+   *
+   * Devuelve lo justo para ponderar —ni enunciado, ni opciones, ni etiquetas—,
+   * porque el peso no necesita más y la pregunta elegida se lee después. El
+   * puerto agrega el histórico de intentos; decidir con él es del dominio.
+   */
+  listSelectionCandidates(query: CandidateQuery): Promise<CandidatePage>;
   create(input: NewQuestionInput): Promise<QuestionDetail>;
   update(id: number, update: QuestionUpdate): Promise<QuestionDetail>;
   setStatus(id: number, status: ContentStatus): Promise<Question>;

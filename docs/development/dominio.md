@@ -15,10 +15,13 @@ adaptadores, está en el sitio equivocado.
 | `attempts.ts` | El intento y su invariante: nunca se presenta sin una correcta entre las mostradas |
 | `sessions.ts` | La sesión de trabajo de un agente |
 | `settings.ts` | Los diez parámetros ajustables, con sus valores por defecto |
+| `selection.ts` | El peso de una candidata al sorteo y la carrera que decide cuál sale |
+| `random.ts` | El azar, detrás de una función, para que la prueba pueda fijar el sorteo |
 | `content-hash.ts` | El sha256 del enunciado normalizado con el que se detectan duplicados |
 | `repositories.ts` | Los puertos de persistencia, sin una sola línea de implementación |
 | `*-service.ts` | Los casos de uso: comprueban y después llaman a los puertos |
 | `testing/in-memory.ts` | Los mismos puertos, en memoria, para probar sin MySQL |
+| `testing/random.ts` | El generador con semilla que hace reproducible cualquier sorteo |
 
 Nada de aquí importa Drizzle, Fastify ni el MCP. `purity.test.ts` lo comprueba en cada `pnpm check`.
 
@@ -66,6 +69,31 @@ que lo retirado siga retirado.
 Reordenar sigue el mismo reparto: `assertReorderIds` exige el conjunto completo de hermanos, una
 vez cada uno y sin ids ajenos, antes de que el puerto reparta `position` 1..n. El contrato HTTP que
 sale de todo esto está en [api.md](api.md).
+
+## La selección se recorre por páginas
+
+El motor de `selection-service.ts` decide qué pregunta se muestra a continuación. Su regla está en
+`docs/especificacion.md` §4.1 y §4.2, y entera en `domain`: los adaptadores solo saben responder
+qué preguntas son candidatas y con qué histórico, nunca cuánto pesan.
+
+El peso es el producto de cuatro factores —novedad, antigüedad, tasa de fallo y dificultad— sobre
+una base de 1. Una pregunta sin intentos toma un camino aparte: sus factores de antigüedad y de
+fallo valen 1, y toda su ventaja es `boost_nueva`. Esa es la regla que no se negocia, y por eso no
+está escrita como un caso límite de una división por cero intentos.
+
+El sorteo no suma pesos. Cada candidata corre con la clave `−ln(u) / peso` y gana la menor, que es
+exactamente el muestreo proporcional al peso; como basta recordar la mejor clave vista, el motor
+puede pedir el catálogo por páginas —`questions.listSelectionCandidates`, con cursor por id— en vez
+de traerlo entero a memoria. De cada candidata viajan seis campos: ni enunciado, ni opciones, ni
+etiquetas. La pregunta elegida se lee después, y solo esa.
+
+Cuando la primera vuelta no encuentra nada, se da una segunda **sin la ventana de enfriamiento y
+solo sin ella**. El filtro es lo que pidió quien llama y nunca se levanta: devolver algo de fuera
+sería responder a otra pregunta. Si tampoco así hay candidatas, el resultado es un conjunto vacío
+explícito —`{ kind: 'empty' }`—, no un error: que el filtro no encuentre nada es una respuesta.
+
+La selección **no escribe nada**. El enfriamiento se mide sobre `attempts`, así que una pregunta
+servida y abandonada no deja rastro y puede volver a salir; `/quiz/next` no consume.
 
 ## Las invariantes están escritas dos veces
 
@@ -118,6 +146,7 @@ número absurdo no puede dejar la aplicación sin arrancar.
 pnpm test src/domain             # el dominio entero, sin MySQL
 pnpm test content                # la jerarquía y su contrato HTTP
 pnpm test questions              # las preguntas y su contrato HTTP
+pnpm test selection              # la fórmula del peso y el sorteo, con semilla fija
 pnpm test repositories.integration      # los adaptadores Drizzle; se saltan sin MySQL delante
 ```
 
