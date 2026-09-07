@@ -4,8 +4,9 @@ El panel es la única interfaz humana del producto: la terminal la conduce el ag
 paquete `@sidequest/web` —React, Vite, TypeScript y shadcn/ui— y no tiene reglas propias: lee y
 escribe por la API, cuyo contrato está en [api.md](api.md).
 
-Esta tarea (SQST-0009) monta el armazón. Las pantallas con contenido real llegan en SQST-0010,
-SQST-0011 y SQST-0017; hasta entonces cada sección dice qué tarea la trae.
+El armazón lo montó SQST-0009 y la pantalla de contenido, SQST-0010. Las que faltan —preguntas,
+importación y cuadro de mando— llegan en SQST-0011, SQST-0019 y SQST-0017; hasta entonces cada
+sección dice qué tarea la trae.
 
 ## Cómo se ejecuta
 
@@ -33,7 +34,7 @@ la navegación lateral y la del cajón móvil, así que no pueden desincronizars
 | Ruta | Pantalla | Contenido |
 | --- | --- | --- |
 | `/` | Panel de control | Estado del sistema; la evolución llega en SQST-0017 |
-| `/temas` | Temas | Materias, temas y subtemas — SQST-0010 |
+| `/temas` | Temas | Materias, temas y subtemas, en un árbol |
 | `/preguntas` | Preguntas | Enunciados, opciones, recursos y etiquetas — SQST-0011 |
 | `/importacion` | Importación | Plantilla, previsualización y confirmación — SQST-0019 |
 | `/ajustes` | Ajustes | Parámetros globales de selección — SQST-0016 |
@@ -107,6 +108,41 @@ petición en curso. Así un cambio de petición no puede dejar a la vista los da
 La función que carga tiene que ser estable (`useCallback`): es la dependencia que decide cuándo se
 vuelve a pedir.
 
+## Pantalla de contenido
+
+`/temas` gestiona los tres niveles de la jerarquía a la vez, en un árbol: materias que despliegan
+sus temas, y temas que despliegan sus subtemas con su recuento de preguntas. Es una sola pantalla
+porque la pregunta cuelga del subtema y el resto se deriva de él; no hay una ruta por nivel.
+
+| Pieza | Qué resuelve |
+| --- | --- |
+| `lib/api/content.ts` | Las llamadas de los tres niveles, que comparten superficie |
+| `lib/content-tree.ts` | Armar el árbol con los tres listados planos, y filtrarlo por estado |
+| `lib/content-rules.ts` | El slug propuesto y la validación previa del formulario |
+| `components/content/` | El árbol, el formulario, la confirmación de archivado y la reordenación |
+| `pages/topics-page.tsx` | Quien decide: recibe la intención de cada fila y la resuelve |
+
+Cinco decisiones que explican por qué está así:
+
+- **El catálogo se pide entero y sin filtrar**, en tres peticiones paralelas, y el filtro por estado
+  se aplica en el cliente conservando a los ancestros de lo que casa. Filtrar en el servidor dejaría
+  inalcanzable un subtema en borrador colgado de un tema publicado.
+- **La reordenación necesita a todos los hermanos**, archivados incluidos, porque el servidor
+  reparte `position` 1..n y rechaza un subconjunto ([api.md](api.md)). Como el catálogo ya está sin
+  filtrar, el diálogo los tiene sin pedir nada más.
+- **El árbol no habla con la API.** Cada fila emite una intención —crear, editar, publicar, archivar,
+  reordenar— y la pantalla la resuelve: quien decide sigue siendo uno.
+- **El rechazo del dominio se enseña con su mensaje.** Publicar un subtema cuyo tema sigue en
+  borrador responde `409`, y lo que se ve es esa frase, que es la parte accionable.
+- **Archivar se confirma y dice hasta dónde baja**, porque no tiene vuelta: una materia arrastra sus
+  temas y sus subtemas.
+
+La validación del formulario —formato y longitud del slug, nombre no vacío— está escrita también en
+`lib/content-rules.ts`, con los mismos límites y los mismos mensajes que `app/src/domain/content.ts`.
+Es una copia deliberada y del mismo tamaño que la de los disparadores de la base
+([dominio.md](dominio.md)): sirve para no gastar una petición en lo que ya se sabe imposible, y el
+dominio sigue siendo quien decide.
+
 ## shadcn/ui
 
 Las primitivas viven en `web/src/components/ui/` y se añaden con su CLI, configurada en
@@ -125,6 +161,8 @@ variables están en `web/src/styles/globals.css`, con Tailwind CSS v4.
 ```bash
 pnpm test routes         # las cinco rutas navegan sin recargar
 pnpm test dashboard      # estados de carga y error del cuadro de mando
+pnpm test topics         # la pantalla de contenido, contra la API sustituida
+pnpm test content        # el cliente de la jerarquía, el árbol y sus reglas
 pnpm test panel          # el panel servido por la aplicación, con Fastify
 pnpm build               # empaqueta el panel en web/dist
 ```
