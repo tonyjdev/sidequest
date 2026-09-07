@@ -24,6 +24,8 @@ import {
 } from '@app/domain/questions.js';
 import type {
   AttemptQuery,
+  CandidatePage,
+  CandidateQuery,
   ContentQuery,
   NewQuestionInput,
   QuestionQuery,
@@ -32,6 +34,7 @@ import type {
   SubtopicQuery,
   TopicQuery,
 } from '@app/domain/repositories.js';
+import type { QuestionCandidate, SelectionFilter } from '@app/domain/selection.js';
 import type { Session, SessionKey, SessionPause } from '@app/domain/sessions.js';
 import {
   settingsFromRows,
@@ -249,6 +252,72 @@ export function createInMemoryRepositories(): InMemoryRepositories {
       question.type,
       options.filter((option) => option.questionId === questionId),
     );
+  }
+
+  /**
+   * La cadena de tres eslabones publicada, con el tema y la materia de cada
+   * subtema: el equivalente de los tres `inner join` del adaptador.
+   */
+  function publishedPaths(): Map<number, { subjectId: number; topicId: number }> {
+    const openSubjects = new Set(
+      subjects.filter((subject) => subject.status === 'published').map((subject) => subject.id),
+    );
+    const openTopics = new Map(
+      topics
+        .filter((topic) => topic.status === 'published' && openSubjects.has(topic.subjectId))
+        .map((topic) => [topic.id, topic.subjectId]),
+    );
+    const paths = new Map<number, { subjectId: number; topicId: number }>();
+
+    for (const subtopic of subtopics) {
+      const subjectId = openTopics.get(subtopic.topicId);
+
+      if (subtopic.status !== 'published' || subjectId === undefined) continue;
+
+      paths.set(subtopic.id, { subjectId, topicId: subtopic.topicId });
+    }
+
+    return paths;
+  }
+
+  function matchesSelectionFilter(
+    question: Question,
+    path: { subjectId: number; topicId: number },
+    filter: SelectionFilter,
+  ): boolean {
+    const tagged = new Set(
+      questionTags.filter((link) => link.questionId === question.id).map((link) => link.tagId),
+    );
+
+    return (
+      (filter.subjectIds?.includes(path.subjectId) ?? true) &&
+      (filter.topicIds?.includes(path.topicId) ?? true) &&
+      (filter.subtopicIds?.includes(question.subtopicId) ?? true) &&
+      (filter.difficulties?.includes(question.difficulty) ?? true) &&
+      (filter.tagIds === undefined || filter.tagIds.some((tagId) => tagged.has(tagId)))
+    );
+  }
+
+  /** El `group by` del adaptador: cuántos intentos, cuántos aciertos y el último. */
+  function attemptStats(
+    questionId: number,
+  ): Pick<QuestionCandidate, 'attemptCount' | 'correctCount' | 'lastAnsweredAt'> {
+    let attemptCount = 0;
+    let correctCount = 0;
+    let lastAnsweredAt: Date | null = null;
+
+    for (const attempt of attempts) {
+      if (attempt.questionId !== questionId) continue;
+
+      attemptCount += 1;
+
+      if (attempt.isCorrect) correctCount += 1;
+      if (lastAnsweredAt === null || attempt.answeredAt > lastAnsweredAt) {
+        lastAnsweredAt = attempt.answeredAt;
+      }
+    }
+
+    return { attemptCount, correctCount, lastAnsweredAt };
   }
 
   function newContentNode(fields: ContentFields): Subject {
@@ -486,6 +555,44 @@ export function createInMemoryRepositories(): InMemoryRepositories {
 
         return Promise.resolve(counts);
       },
+      listSelectionCandidates(query: CandidateQuery): Promise<CandidatePage> {
+        const { filter, cooldownSince, afterId, limit } = query;
+        const paths = publishedPaths();
+        const candidates: QuestionCandidate[] = [];
+
+        for (const question of [...questions].sort((a, b) => a.id - b.id)) {
+          const path = paths.get(question.subtopicId);
+
+          if (question.status !== 'published' || path === undefined) continue;
+          if (afterId !== undefined && question.id <= afterId) continue;
+          if (!matchesSelectionFilter(question, path, filter)) continue;
+
+          const stats = attemptStats(question.id);
+
+          if (
+            cooldownSince !== null &&
+            stats.lastAnsweredAt !== null &&
+            stats.lastAnsweredAt > cooldownSince
+          ) {
+            continue;
+          }
+
+          candidates.push({
+            questionId: question.id,
+            subtopicId: question.subtopicId,
+            difficulty: question.difficulty,
+            ...stats,
+          });
+
+          if (candidates.length === limit) break;
+        }
+
+        return Promise.resolve({
+          candidates,
+          nextCursor: candidates.length < limit ? null : (candidates.at(-1)?.questionId ?? null),
+        });
+      },
+
       create(input: NewQuestionInput): Promise<QuestionDetail> {
         const timestamp = now();
         // Nace en borrador aunque se pida publicada, igual que contra MySQL: la
