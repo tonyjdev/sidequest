@@ -4,9 +4,9 @@ El panel es la única interfaz humana del producto: la terminal la conduce el ag
 paquete `@sidequest/web` —React, Vite, TypeScript y shadcn/ui— y no tiene reglas propias: lee y
 escribe por la API, cuyo contrato está en [api.md](api.md).
 
-El armazón lo montó SQST-0009 y la pantalla de contenido, SQST-0010. Las que faltan —preguntas,
-importación y cuadro de mando— llegan en SQST-0011, SQST-0019 y SQST-0017; hasta entonces cada
-sección dice qué tarea la trae.
+El armazón lo montó SQST-0009, la pantalla de contenido SQST-0010 y la de preguntas SQST-0011.
+Las que faltan —importación y cuadro de mando— llegan en SQST-0019 y SQST-0017; hasta entonces
+cada sección dice qué tarea la trae.
 
 ## Cómo se ejecuta
 
@@ -35,9 +35,9 @@ la navegación lateral y la del cajón móvil, así que no pueden desincronizars
 | --- | --- | --- |
 | `/` | Panel de control | Estado del sistema; la evolución llega en SQST-0017 |
 | `/temas` | Temas | Materias, temas y subtemas, en un árbol |
-| `/preguntas` | Preguntas | Enunciados, opciones, recursos y etiquetas — SQST-0011 |
+| `/preguntas` | Preguntas | Listado con filtros y el editor del agregado completo |
 | `/importacion` | Importación | Plantilla, previsualización y confirmación — SQST-0019 |
-| `/ajustes` | Ajustes | Parámetros globales de selección — SQST-0016 |
+| `/ajustes` | Ajustes | Parámetros globales de selección — SQST-0025 |
 | `*` | No encontrada | Cualquier otra dirección, resuelta dentro del panel |
 
 Todas cuelgan del mismo armazón (`components/layout/app-shell.tsx`), así que navegar cambia el
@@ -143,6 +143,53 @@ Es una copia deliberada y del mismo tamaño que la de los disparadores de la bas
 ([dominio.md](dominio.md)): sirve para no gastar una petición en lo que ya se sabe imposible, y el
 dominio sigue siendo quien decide.
 
+## Pantalla de preguntas
+
+`/preguntas` lista y edita las preguntas. Es la pantalla más rica del panel porque **la pregunta es
+un agregado**: su enunciado, sus opciones, sus recursos y sus etiquetas se editan juntos y se
+guardan en una sola llamada ([api.md](api.md)).
+
+| Pieza | Qué resuelve |
+| --- | --- |
+| `lib/api/questions.ts` | El listado con sus filtros, la ficha, el alta, la edición y las tres transiciones |
+| `lib/api/settings.ts` | Los parámetros globales; el panel lee hoy `visible_options_default` |
+| `lib/question-filters.ts` | El estado de los cinco filtros y si hay alguno activo |
+| `lib/question-rules.ts` | La validación previa del formulario y las tres invariantes de publicación |
+| `lib/question-preview.ts` | La composición del intento que enseña la vista previa |
+| `components/questions/` | El listado, los filtros, el editor y sus campos, y la vista previa |
+| `pages/questions-page.tsx` | Quien decide: recibe la intención de cada fila y la resuelve |
+
+Seis decisiones que explican por qué está así:
+
+- **Dos cargas, no una.** El contexto —catálogo, etiquetas y parámetros— se pide una vez y nombra
+  los subtemas, llena los filtros y dice cuántas opciones se mostrarán; el listado se vuelve a pedir
+  con cada filtro, porque filtrar y paginar los hace el servidor.
+- **La paginación va con una fila de más.** El contrato no devuelve el total, así que se piden
+  `PAGE_SIZE + 1` preguntas y la de más es lo único que distingue la última página de las demás.
+- **El marcado de correctas sigue al tipo**: botón de radio en selección única, casilla en múltiple.
+  Cambiar de múltiple a única con más de una correcta **avisa y no desmarca nada**: elegir cuál es
+  la buena es una decisión de quien escribe, no un descarte silencioso.
+- **El alta puede nacer publicada.** El editor ofrece «Guardar borrador» y «Guardar y publicar»
+  porque el cuerpo del alta lleva ya sus opciones y las tres invariantes se pueden comprobar.
+- **Un rechazo del servidor no vacía el formulario.** El error se enseña arriba con su mensaje y lo
+  escrito se queda donde estaba; perderlo por un `422` sería el peor momento para hacerlo.
+- **Las etiquetas se crean desde aquí.** No hay otra pantalla que las cree, y una etiqueta que no se
+  puede crear no se puede usar para filtrar. Crear una no recarga el contexto: se añade a la lista
+  que ya está en pantalla.
+
+### Vista previa
+
+El editor enseña cómo se vería la pregunta en la terminal, con las opciones que se mostrarían
+(docs/especificacion.md §4.3): una correcta más distractores en selección única, todas las
+correctas en múltiple —ampliando el número mostrado si no caben—, y nunca menos de dos ni ninguna
+sin correcta.
+
+`lib/question-preview.ts` es una **copia deliberada de una regla de dominio**, del mismo tipo que
+la de `lib/content-rules.ts`: el paquete del panel no importa el de la aplicación, y la composición
+del intento la implementa SQST-0013. Se diferencia en una cosa a propósito: el sorteo recibe una
+semilla y es reproducible, para que la vista previa no baile mientras se escribe. Cuando el dominio
+exponga la composición, esta se sustituye por una llamada.
+
 ## shadcn/ui
 
 Las primitivas viven en `web/src/components/ui/` y se añaden con su CLI, configurada en
@@ -163,6 +210,7 @@ pnpm test routes         # las cinco rutas navegan sin recargar
 pnpm test dashboard      # estados de carga y error del cuadro de mando
 pnpm test topics         # la pantalla de contenido, contra la API sustituida
 pnpm test content        # el cliente de la jerarquía, el árbol y sus reglas
+pnpm test questions      # la pantalla de preguntas, su cliente, sus reglas y la vista previa
 pnpm test panel          # el panel servido por la aplicación, con Fastify
 pnpm build               # empaqueta el panel en web/dist
 ```

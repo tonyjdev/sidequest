@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import type { ContentCatalog, ContentStatus } from '@web/lib/api/content';
-import { buildContentTree, countQuestions, filterContentTree } from '@web/lib/content-tree';
+import {
+  buildContentTree,
+  buildSubtopicPaths,
+  countQuestions,
+  filterContentTree,
+} from '@web/lib/content-tree';
 
 function node(id: number, name: string, status: ContentStatus = 'draft') {
   return { id, name, slug: name.toLowerCase(), description: null, status, position: id };
@@ -76,5 +81,23 @@ describe('filtro por estado', () => {
     const tree = buildContentTree(catalog);
 
     expect(filterContentTree(tree, 'all')).toBe(tree);
+  });
+});
+
+describe('ruta del subtema', () => {
+  it('nombra cada subtema por su materia y su tema', () => {
+    expect(buildSubtopicPaths(catalog).map((path) => path.label)).toEqual([
+      'Matematicas › Algebra › Ecuaciones',
+      'Matematicas › Algebra › Polinomios',
+    ]);
+  });
+
+  it('deja fuera al subtema cuyo tema no está en el catálogo', () => {
+    const paths = buildSubtopicPaths({
+      ...catalog,
+      topics: [],
+    });
+
+    expect(paths).toEqual([]);
   });
 });

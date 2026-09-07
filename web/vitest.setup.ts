@@ -22,6 +22,19 @@ if (typeof window.matchMedia !== 'function') {
     }) as MediaQueryList;
 }
 
+/**
+ * Tampoco implementa `ResizeObserver`, y las primitivas de Radix que se miden
+ * —el desplegable, la casilla— lo piden al montarse. Un observador que no
+ * observa basta: en un DOM simulado nada cambia de tamaño.
+ */
+if (typeof globalThis.ResizeObserver !== 'function') {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
 // Sin `globals`, la limpieza automática de Testing Library no se engancha sola.
 afterEach(() => {
   cleanup();
